@@ -39,6 +39,7 @@ import MicroSlats from './components/MicroSlats.jsx';
 import { ReportExportModal } from './components/ReportExportModal.tsx';
 import { BlurRevealHeading, SpotlightCard } from './components/SpotlightCard.tsx';
 import { ThemeToggle, type ThemeMode } from './components/ThemeToggle.tsx';
+import { SENTINEL_LOGO_SRC } from './utils/assets.ts';
 import type {
   AuditModuleId,
   AuditReport,
@@ -468,7 +469,7 @@ export default function App() {
           >
             <div className="relative flex h-8 w-8 items-center justify-center rounded-full overflow-hidden ring-1 ring-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.3)] bg-[#070B14] shrink-0">
               <img
-                src="/assets/aistudio/Code_Generated_Image_dcad87d9.png"
+                src={SENTINEL_LOGO_SRC}
                 alt="Sentinel AppSec Logo"
                 className="h-full w-full object-cover"
               />
@@ -535,7 +536,7 @@ export default function App() {
           <div className="flex items-start gap-5 max-w-3xl">
             <div className="relative hidden sm:flex h-16 w-16 items-center justify-center rounded-full p-0.5 shrink-0 mt-0.5 ring-2 ring-cyan-500/40 shadow-[0_0_24px_rgba(6,182,212,0.35)] bg-[#070B14] overflow-hidden">
               <img
-                src="/assets/aistudio/Code_Generated_Image_dcad87d9.png"
+                src={SENTINEL_LOGO_SRC}
                 alt="Sentinel AppSec Security Crest"
                 className="h-full w-full object-cover rounded-full"
               />
@@ -2186,7 +2187,7 @@ export default function App() {
           <div className="flex items-center gap-2.5">
             <div className="h-5 w-5 rounded-full overflow-hidden ring-1 ring-cyan-500/30 shrink-0 bg-[#070B14]">
               <img
-                src="/assets/aistudio/Code_Generated_Image_dcad87d9.png"
+                src={SENTINEL_LOGO_SRC}
                 alt="Sentinel AppSec Logo"
                 className="h-full w-full object-cover"
               />

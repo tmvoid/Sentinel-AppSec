@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import type { AuditReport } from '../types/audit.ts';
+import { SENTINEL_LOGO_SRC } from './assets.ts';
 
 /**
  * Sanitizes text for standard PDF PostScript fonts (Helvetica/Courier)
@@ -49,7 +50,7 @@ function loadLogoImage(): Promise<HTMLImageElement | null> {
       img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
       img.onerror = () => resolve(null);
-      img.src = '/assets/aistudio/Code_Generated_Image_dcad87d9.png';
+      img.src = SENTINEL_LOGO_SRC;
     } catch {
       resolve(null);
     }

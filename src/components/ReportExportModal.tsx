@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { AuditReport } from '../types/audit.ts';
 import { exportAuditReportToPdf } from '../utils/pdfExport.ts';
+import { SENTINEL_LOGO_SRC } from '../utils/assets.ts';
 
 interface ReportExportModalProps {
   report: AuditReport | null;
@@ -252,7 +253,7 @@ export const ReportExportModal: React.FC<ReportExportModalProps> = ({
             className="pointer-events-none select-none fixed inset-0 z-0 flex items-center justify-center"
           >
             <img
-              src="/assets/aistudio/Code_Generated_Image_dcad87d9.png"
+              src={SENTINEL_LOGO_SRC}
               alt=""
               className="h-80 w-80 object-contain opacity-[0.045] filter contrast-150"
             />
@@ -263,7 +264,7 @@ export const ReportExportModal: React.FC<ReportExportModalProps> = ({
             <div className="flex items-center gap-4">
               <div className="relative flex h-14 w-14 items-center justify-center rounded-full overflow-hidden p-0.5 shrink-0 ring-2 ring-cyan-500/40 shadow-[0_0_18px_rgba(6,182,212,0.3)] bg-[#070B14]">
                 <img
-                  src="/assets/aistudio/Code_Generated_Image_dcad87d9.png"
+                  src={SENTINEL_LOGO_SRC}
                   alt="Sentinel AppSec Logo"
                   className="h-full w-full object-cover rounded-full"
                 />
