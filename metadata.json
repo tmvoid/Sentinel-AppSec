@@ -1,6 +1,6 @@
 {
   "name": "MLSA KIIT Sentinel",
-  "description": "Authentic, zero-hallucination web security auditing and vulnerability verification platform for Microsoft Learn Student Ambassadors at KIIT (MLSA KIIT Chapter).",
+  "description": "Universal, zero-hallucination web security auditing, exploitability verification, and automated hardening platform engineered by Tanmay Bhardwaj.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

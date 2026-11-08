@@ -1,6 +1,13 @@
 export type SeverityLevel = 'critical' | 'high' | 'medium' | 'low';
 
-export type AuditModuleId = 'http' | 'exposure' | 'dependencies' | 'sast';
+export type AuditModuleId =
+  | 'http'
+  | 'exposure'
+  | 'dependencies'
+  | 'sast'
+  | 'bundle'
+  | 'jwt'
+  | 'protocol';
 
 export interface UploadedCodeFile {
   name: string;
@@ -11,12 +18,16 @@ export interface AuditTargetConfig {
   projectName: string;
   targetUrl: string;
   githubRepoUrl: string;
+  jwtToken?: string;
   uploadedFiles: UploadedCodeFile[];
   modules: {
     httpHeaders: boolean;
     routeProbing: boolean;
     dependencyCve: boolean;
     sourceSast: boolean;
+    jsBundleAudit: boolean;
+    jwtAudit: boolean;
+    protocolProbing: boolean;
   };
 }
 
@@ -24,6 +35,16 @@ export interface RemediationSnippet {
   label: string;
   language: string;
   code: string;
+}
+
+export interface ExploitProofMetadata {
+  type: 'clickjacking' | 'cors' | 'jwt-forge' | 'graphql' | 'open-redirect';
+  targetUrl?: string;
+  crackedSecret?: string;
+  forgedAdminJwt?: string;
+  corsOrigin?: string;
+  graphqlTypes?: string[];
+  redirectLocation?: string;
 }
 
 export interface VerifiedFinding {
@@ -37,11 +58,19 @@ export interface VerifiedFinding {
   summary: string;
   impact: string;
   evidence: {
-    type: 'http-header' | 'route-probe' | 'osv-cve' | 'source-line';
+    type:
+      | 'http-header'
+      | 'route-probe'
+      | 'osv-cve'
+      | 'source-line'
+      | 'js-bundle'
+      | 'jwt-crypto'
+      | 'protocol-probe';
     rawProof: string;
     reproductionCommand: string;
     verifiedAt: string;
   };
+  exploitProof?: ExploitProofMetadata;
   remediation: {
     summary: string;
     snippets: RemediationSnippet[];
@@ -82,6 +111,14 @@ export interface ScannedFileRecord {
   findingsCount: number;
 }
 
+export interface DecodedJwtRecord {
+  source: string;
+  rawPreview: string;
+  header: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  weakSecretMatched: string | null;
+}
+
 export interface RawAuditTelemetry {
   http?: {
     requestedUrl: string;
@@ -117,6 +154,23 @@ export interface RawAuditTelemetry {
     totalLines: number;
     files: ScannedFileRecord[];
   };
+  bundles?: {
+    scriptsAnalyzed: number;
+    totalBytes: number;
+    bundleNames: string[];
+    discoveredEndpoints: string[];
+  };
+  jwt?: {
+    tokensInspected: number;
+    decodedTokens: DecodedJwtRecord[];
+  };
+  protocol?: {
+    allowedMethods: string[];
+    traceEnabled: boolean;
+    graphqlEndpoint: string | null;
+    graphqlIntrospectionOpen: boolean;
+    openRedirectParam: string | null;
+  };
 }
 
 export interface AuditReport {
@@ -133,4 +187,14 @@ export interface AuditReport {
   findings: VerifiedFinding[];
   passedChecks: PassedCheck[];
   rawTelemetry: RawAuditTelemetry;
+}
+
+export interface RemediationDelta {
+  baselineReportId: string;
+  baselineProjectName: string;
+  baselineTimestamp: string;
+  resolvedFindings: VerifiedFinding[];
+  remainingFindings: VerifiedFinding[];
+  newFindings: VerifiedFinding[];
+  passedDelta: number;
 }

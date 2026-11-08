@@ -9,12 +9,12 @@ export interface AuditPreset {
 
 export const AUDIT_PRESETS: AuditPreset[] = [
   {
-    id: 'kiit-fest-vulnerable',
-    label: 'KIIT Fest Registration Portal (Vulnerable Benchmark)',
+    id: 'modern-web-vulnerable',
+    label: 'Modern Web Application (Vulnerable Benchmark)',
     subtitle:
-      'Audits a live unhardened endpoint + student repo files with real OSV CVEs & SAST sinks',
+      'Audits a live unhardened endpoint + repo files with real OSV CVEs, weak JWT & SAST sinks',
     config: {
-      projectName: 'KIIT Fest Student Registration Portal',
+      projectName: 'Modern Web Application (Sample Target)',
       targetUrl: '/api/sandbox/vulnerable-student-portal',
       githubRepoUrl: '',
       modules: {
@@ -22,13 +22,16 @@ export const AUDIT_PRESETS: AuditPreset[] = [
         routeProbing: true,
         dependencyCve: true,
         sourceSast: true,
+        jsBundleAudit: true,
+        jwtAudit: true,
+        protocolProbing: true,
       },
       uploadedFiles: [
         {
           name: 'package.json',
           content: JSON.stringify(
             {
-              name: 'kiit-fest-portal',
+              name: 'sample-web-portal',
               version: '1.0.0',
               private: true,
               dependencies: {
@@ -47,14 +50,14 @@ export const AUDIT_PRESETS: AuditPreset[] = [
           content: `import express from 'express';
 import jwt from 'jsonwebtoken';
 
-// Student team hardcoded production secret and AWS key during hackathon
-const JWT_SECRET = "kiit_fest_super_secret_signing_key_2026_prod";
+// Hardcoded production secret and cloud access key
+const JWT_SECRET = "production_super_secret_signing_key_2026_demo";
 const AWS_BACKUP_KEY = "AKIAIOSFODNN7EXAMPLE";
 
-export async function loginStudent(req: express.Request, res: express.Response, db: any) {
-  const { email, rollNumber } = req.body;
+export async function loginUser(req: express.Request, res: express.Response, db: any) {
+  const { email, accountId } = req.body;
   // Unparameterized SQL string interpolation
-  const query = \`SELECT id, email, role FROM students WHERE email = '\${email}' AND roll = '\${rollNumber}'\`;
+  const query = \`SELECT id, email, role FROM users WHERE email = '\${email}' AND account_id = '\${accountId}'\`;
   const user = await db.execute(query);
 
   const token = jwt.sign({ sub: user.id, role: user.role }, JWT_SECRET);
@@ -63,10 +66,10 @@ export async function loginStudent(req: express.Request, res: express.Response, 
 `,
         },
         {
-          name: 'src/components/EventNoticeBoard.tsx',
+          name: 'src/components/BroadcastNotice.tsx',
           content: `import React from 'react';
 
-export function EventNoticeBoard({ rawNoticeHtml, parentOrigin }: { rawNoticeHtml: string; parentOrigin: string }) {
+export function BroadcastNotice({ rawNoticeHtml, parentOrigin }: { rawNoticeHtml: string; parentOrigin: string }) {
   const notifyEmbed = () => {
     window.parent.postMessage({ type: 'NOTICE_VIEWED', secretToken: localStorage.getItem('token') }, '*');
   };
@@ -83,26 +86,29 @@ export function EventNoticeBoard({ rawNoticeHtml, parentOrigin }: { rawNoticeHtm
     },
   },
   {
-    id: 'mlsa-hardened-portal',
-    label: 'MLSA KIIT Hardened Portal (Zero-Issue Verification)',
+    id: 'hardened-production-service',
+    label: 'Hardened Production Service (Zero-Issue Benchmark)',
     subtitle:
       'Proves zero bogus reports: audits a hardened endpoint + clean codebase and reports 0 false positives',
     config: {
-      projectName: 'MLSA KIIT Official Chapter Hub (Hardened)',
-      targetUrl: '/api/sandbox/hardened-mlsa-portal',
+      projectName: 'Hardened Production Service (Clean Target)',
+      targetUrl: '/api/sandbox/hardened-service',
       githubRepoUrl: '',
       modules: {
         httpHeaders: true,
         routeProbing: true,
         dependencyCve: true,
         sourceSast: true,
+        jsBundleAudit: true,
+        jwtAudit: true,
+        protocolProbing: true,
       },
       uploadedFiles: [
         {
           name: 'package.json',
           content: JSON.stringify(
             {
-              name: 'mlsa-kiit-chapter-hub',
+              name: 'hardened-service-core',
               version: '2.4.0',
               private: true,
               dependencies: {
@@ -117,13 +123,13 @@ export function EventNoticeBoard({ rawNoticeHtml, parentOrigin }: { rawNoticeHtm
         },
         {
           name: 'src/security/authService.ts',
-          content: `export async function verifyAmbassadorSession(db: { query: (sql: string, params: unknown[]) => Promise<unknown> }, email: string) {
-  const jwtSecret = process.env.MLSA_JWT_SECRET;
+          content: `export async function verifyUserSession(db: { query: (sql: string, params: unknown[]) => Promise<unknown> }, email: string) {
+  const jwtSecret = process.env.APP_JWT_SECRET;
   if (!jwtSecret) {
-    throw new Error('Missing MLSA_JWT_SECRET environment variable');
+    throw new Error('Missing APP_JWT_SECRET environment variable');
   }
   return await db.query(
-    'SELECT id, email, chapter_role FROM ambassadors WHERE email = $1',
+    'SELECT id, email, role FROM users WHERE email = $1',
     [email]
   );
 }
@@ -146,6 +152,9 @@ export function EventNoticeBoard({ rawNoticeHtml, parentOrigin }: { rawNoticeHtm
         routeProbing: true,
         dependencyCve: false,
         sourceSast: false,
+        jsBundleAudit: true,
+        jwtAudit: true,
+        protocolProbing: true,
       },
       uploadedFiles: [],
     },

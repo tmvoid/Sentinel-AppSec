@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -5,6 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import type {
   AuditModuleId,
   AuditReport,
+  DecodedJwtRecord,
   DependencyRecord,
   PassedCheck,
   ProbeRecord,
@@ -21,53 +23,97 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
+// Helper to sign an HS256 JWT for local sandbox testing
+function createSignedJwt(
+  payload: Record<string, unknown>,
+  secret: string
+): string {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const b64Header = Buffer.from(JSON.stringify(header)).toString('base64url');
+  const b64Payload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const data = `${b64Header}.${b64Payload}`;
+  const sig = crypto
+    .createHmac('sha256', secret)
+    .update(data)
+    .digest('base64url');
+  return `${data}.${sig}`;
+}
+
 // ============================================================================
 // LIVE SANDBOX BENCHMARK ENDPOINTS (For Authentic Local Verification Testing)
 // ============================================================================
 
-// 1. Intentionally Vulnerable Student Hackathon Portal Endpoint
 app.get('/api/sandbox/vulnerable-student-portal', (req, res) => {
   const origin = req.headers.origin;
+  const redirectTarget = req.query.redirect || req.query.next;
+  if (typeof redirectTarget === 'string' && redirectTarget.startsWith('http')) {
+    return res.redirect(302, redirectTarget);
+  }
+
   res.setHeader('X-Powered-By', 'Express 4.17.1 (Node.js v16.14.0)');
   res.setHeader('Server', 'nginx/1.18.0 (Ubuntu)');
+  res.setHeader('Allow', 'GET, POST, PUT, DELETE, TRACE, OPTIONS');
   if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   } else {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
-  res.setHeader(
-    'Set-Cookie',
-    'mlsa_session_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.demo_student_session; Path=/'
+
+  // Real HS256 JWT signed with weak secret "secret" and missing exp claim
+  const demoJwt = createSignedJwt(
+    {
+      sub: 'user_109248',
+      email: 'alex.developer@example.com',
+      role: 'developer',
+    },
+    'secret'
   );
+  res.setHeader('Set-Cookie', `auth_session_token=${demoJwt}; Path=/`);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.status(200).send(`<!doctype html>
 <html lang="en">
   <head>
-    <title>KIIT Fest Registration Portal (Demo Target)</title>
+    <title>Modern Web Application (Sample Target)</title>
     <script src="https://cdn.example-unverified-analytics.org/tracker-v1.js"></script>
     <script src="/api/sandbox/vulnerable-student-portal/app.bundle.js"></script>
   </head>
   <body>
-    <h1>KIIT Student Event Registration Portal</h1>
+    <h1>Modern Web Application — Service Portal</h1>
   </body>
 </html>`);
+});
+
+app.options('/api/sandbox/vulnerable-student-portal', (_req, res) => {
+  res.setHeader('Allow', 'GET, POST, PUT, DELETE, TRACE, OPTIONS');
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, DELETE, TRACE, OPTIONS'
+  );
+  res.status(204).end();
 });
 
 app.get('/api/sandbox/vulnerable-student-portal/.env', (_req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.status(200).send(
-    `# Accidentally exposed environment configuration\nPORT=3000\nDATABASE_URL="postgres://kiit_admin:SuperSecretPass2026@db.internal:5432/events"\nJWT_SECRET="kiit_hackathon_hardcoded_jwt_secret_key_99812"\nSTRIPE_SECRET_KEY="sk_test_51MlsaKiitDemoKey000000000000000"\n`
+    `# Accidentally exposed environment configuration\nPORT=3000\nDATABASE_URL="postgres://admin:SuperSecretPass2026@db.internal:5432/production"\nJWT_SECRET="secret"\nSTRIPE_SECRET_KEY="sk_test_51UniversalDemoKey000000000000000"\n`
   );
 });
 
 app.get('/api/sandbox/vulnerable-student-portal/app.bundle.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res
-    .status(200)
-    .send(
-      `console.log("Student Portal Bundle");\n//# sourceMappingURL=/api/sandbox/vulnerable-student-portal/app.bundle.js.map`
-    );
+  res.status(200).send(
+    `// Production Client Bundle
+const API_ROUTES = [
+  "/api/v1/events/register",
+  "/api/v1/admin/export-users",
+  "/api/internal/debug-dump",
+  "/graphql"
+];
+const VITE_FIREBASE_ADMIN_KEY = "AIzaSyD-9918237192837192837192837192837";
+console.log("Loaded routes:", API_ROUTES);
+//# sourceMappingURL=/api/sandbox/vulnerable-student-portal/app.bundle.js.map`
+  );
 });
 
 app.get('/api/sandbox/vulnerable-student-portal/app.bundle.js.map', (_req, res) => {
@@ -78,15 +124,36 @@ app.get('/api/sandbox/vulnerable-student-portal/app.bundle.js.map', (_req, res) 
       file: 'app.bundle.js',
       sources: ['src/auth/adminController.ts', 'src/config/keys.ts'],
       sourcesContent: [
-        'export const ADMIN_OVERRIDE_TOKEN = "mlsa-internal-bypass-9912";',
+        'export const ADMIN_OVERRIDE_TOKEN = "sentinel-internal-bypass-9912";',
       ],
       mappings: 'AAAA,OAAO,MAAM,oBAAoB',
     })
   );
 });
 
-// 2. Hardened MLSA KIIT Production Endpoint
-app.get('/api/sandbox/hardened-mlsa-portal', (_req, res) => {
+app.post('/api/sandbox/vulnerable-student-portal/graphql', (req, res) => {
+  const body = JSON.stringify(req.body || {});
+  if (body.includes('__schema')) {
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json({
+      data: {
+        __schema: {
+          queryType: { name: 'Query' },
+          types: [
+            { name: 'StudentUser' },
+            { name: 'AdminCredentials' },
+            { name: 'PaymentRecord' },
+            { name: 'EventPassMutation' },
+          ],
+        },
+      },
+    });
+  }
+  res.status(200).json({ data: {} });
+});
+
+// Hardened Production Benchmark Endpoint
+const handleHardenedService = (_req: express.Request, res: express.Response) => {
   res.removeHeader('X-Powered-By');
   res.setHeader(
     'Strict-Transport-Security',
@@ -105,19 +172,21 @@ app.get('/api/sandbox/hardened-mlsa-portal', (_req, res) => {
   );
   res.setHeader(
     'Set-Cookie',
-    '__Host-mlsa_session=verified_secure_token; Path=/; Secure; HttpOnly; SameSite=Strict'
+    '__Host-session=verified_secure_opaque_id; Path=/; Secure; HttpOnly; SameSite=Strict'
   );
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.status(200).send(`<!doctype html>
 <html lang="en">
   <head>
-    <title>MLSA KIIT Hardened Chapter Portal</title>
+    <title>Hardened Production Service</title>
   </head>
   <body>
-    <h1>MLSA KIIT Verified Secure Endpoint</h1>
+    <h1>Hardened Production Service — Verified Secure Endpoint</h1>
   </body>
 </html>`);
-});
+};
+
+app.get('/api/sandbox/hardened-service', handleHardenedService);
 
 // ============================================================================
 // HELPER UTILITIES FOR AUTHENTIC SECURITY AUDITING
@@ -136,7 +205,7 @@ async function fetchWithTimeout(
       signal: controller.signal,
       headers: {
         'User-Agent':
-          'MLSA-KIIT-Sentinel/1.0 (Authentic Security Verification Engine)',
+          'Sentinel-AppSec/2.0 (Authentic Security Verification Engine)',
         ...(options.headers || {}),
       },
     });
@@ -154,7 +223,6 @@ function normalizeTargetUrl(rawUrl: string, reqHost: string): string {
   if (!/^https?:\/\//i.test(trimmed)) {
     return `https://${trimmed}`;
   }
-  // If user enters the current dev server host, route locally for speed & reliability
   try {
     const parsed = new URL(trimmed);
     if (parsed.host === reqHost) {
@@ -178,6 +246,7 @@ async function runHttpHeaderInspection(
   passedChecks: PassedCheck[];
   telemetry: NonNullable<RawAuditTelemetry['http']>;
   htmlBody: string;
+  setCookieValues: string[];
 }> {
   const findings: VerifiedFinding[] = [];
   const passedChecks: PassedCheck[] = [];
@@ -196,8 +265,12 @@ async function runHttpHeaderInspection(
     headersMap[key.toLowerCase()] = value;
   });
 
+  const setCookieValues = headersMap['set-cookie']
+    ? [headersMap['set-cookie']]
+    : [];
+
   // Perform active CORS reflection probe with an untrusted origin
-  const probeOrigin = 'https://untrusted-origin.mlsa-kiit.audit';
+  const probeOrigin = 'https://untrusted-origin.sentinel.audit';
   let corsAllowOrigin: string | null = null;
   let corsAllowCredentials: string | null = null;
   try {
@@ -223,7 +296,12 @@ async function runHttpHeaderInspection(
     Boolean(headersMap['strict-transport-security']);
 
   // 1. HTTPS / TLS Check
-  if (!isHttps && !displayUrl.includes('localhost') && !displayUrl.startsWith('/')) {
+  if (
+    !isHttps &&
+    !displayUrl.includes('localhost') &&
+    !displayUrl.includes('127.0.0.1') &&
+    !displayUrl.startsWith('/')
+  ) {
     findings.push({
       id: 'http-plaintext-transport',
       title: 'Unencrypted HTTP Transport (Missing TLS/HTTPS)',
@@ -315,7 +393,8 @@ async function runHttpHeaderInspection(
   ) {
     findings.push({
       id: 'http-permissive-csp',
-      title: 'Permissive Content-Security-Policy Allows Unsafe Script Execution',
+      title:
+        'Permissive Content-Security-Policy Allows Unsafe Script Execution',
       severity: 'medium',
       module: 'http',
       cwe: 'CWE-693',
@@ -403,7 +482,8 @@ async function runHttpHeaderInspection(
   if (!xfo && !hasFrameAncestors) {
     findings.push({
       id: 'http-missing-frame-protection',
-      title: 'Missing Clickjacking Protection (X-Frame-Options / frame-ancestors)',
+      title:
+        'Missing Clickjacking Protection (X-Frame-Options / frame-ancestors)',
       severity: 'medium',
       module: 'http',
       cwe: 'CWE-1021',
@@ -418,6 +498,10 @@ async function runHttpHeaderInspection(
         rawProof: `x-frame-options: <ABSENT>\ncontent-security-policy frame-ancestors: <ABSENT>\n\nActual Response Headers:\n${rawHeaderDump}`,
         reproductionCommand: `curl -sI "${displayUrl}" | grep -iE "x-frame-options|content-security-policy"`,
         verifiedAt: nowIso,
+      },
+      exploitProof: {
+        type: 'clickjacking',
+        targetUrl: displayUrl,
       },
       remediation: {
         summary:
@@ -507,14 +591,19 @@ async function runHttpHeaderInspection(
         reproductionCommand: `curl -sI -H "Origin: ${probeOrigin}" "${displayUrl}" | grep -i "access-control-"`,
         verifiedAt: nowIso,
       },
+      exploitProof: {
+        type: 'cors',
+        targetUrl: displayUrl,
+        corsOrigin: probeOrigin,
+      },
       remediation: {
         summary:
-          'Validate the request Origin against an explicit allowlist of trusted MLSA KIIT domains instead of reflecting arbitrary origins.',
+          'Validate the request Origin against an explicit allowlist of trusted application domains instead of reflecting arbitrary origins.',
         snippets: [
           {
             label: 'Express CORS Allowlist',
             language: 'typescript',
-            code: `const ALLOWED_ORIGINS = new Set(['https://mlsakiit.tech', 'http://localhost:3000']);\n\napp.use((req, res, next) => {\n  const origin = req.headers.origin;\n  if (origin && ALLOWED_ORIGINS.has(origin)) {\n    res.setHeader('Access-Control-Allow-Origin', origin);\n    res.setHeader('Access-Control-Allow-Credentials', 'true');\n  }\n  next();\n});`,
+            code: `const ALLOWED_ORIGINS = new Set(['https://app.example.com', 'http://localhost:3000']);\n\napp.use((req, res, next) => {\n  const origin = req.headers.origin;\n  if (origin && ALLOWED_ORIGINS.has(origin)) {\n    res.setHeader('Access-Control-Allow-Origin', origin);\n    res.setHeader('Access-Control-Allow-Credentials', 'true');\n  }\n  next();\n});`,
           },
         ],
       },
@@ -545,7 +634,7 @@ async function runHttpHeaderInspection(
           {
             label: 'Express CORS Config',
             language: 'typescript',
-            code: `res.setHeader('Access-Control-Allow-Origin', 'https://mlsakiit.tech');`,
+            code: `res.setHeader('Access-Control-Allow-Origin', 'https://app.example.com');`,
           },
         ],
       },
@@ -560,7 +649,7 @@ async function runHttpHeaderInspection(
     });
   }
 
-  // 7. Technology Version Disclosure (X-Powered-By / Server version numbers)
+  // 7. Technology Version Disclosure
   const poweredBy = headersMap['x-powered-by'];
   const serverHeader = headersMap['server'];
   const hasServerVersion = serverHeader && /\/[0-9]+\.[0-9]+/.test(serverHeader);
@@ -658,7 +747,8 @@ async function runHttpHeaderInspection(
     } else {
       passedChecks.push({
         id: 'pass-cookie-flags',
-        title: 'Cookie Security Attributes (HttpOnly, Secure, SameSite) Verified',
+        title:
+          'Cookie Security Attributes (HttpOnly, Secure, SameSite) Verified',
         module: 'http',
         target: displayUrl,
         proofSummary: `set-cookie: ${setCookieHeader}`,
@@ -697,7 +787,8 @@ async function runHttpHeaderInspection(
   if (externalScriptsWithoutSri.length > 0) {
     findings.push({
       id: 'http-missing-sri',
-      title: 'External Third-Party Script Loaded Without Subresource Integrity (SRI)',
+      title:
+        'External Third-Party Script Loaded Without Subresource Integrity (SRI)',
       severity: 'medium',
       module: 'http',
       cwe: 'CWE-829',
@@ -738,6 +829,7 @@ async function runHttpHeaderInspection(
     findings,
     passedChecks,
     htmlBody,
+    setCookieValues,
     telemetry: {
       requestedUrl: displayUrl,
       finalUrl: response.url,
@@ -778,8 +870,7 @@ async function runSensitiveRouteProbing(
   const originAndBase = `${baseObj.origin}${basePath}`;
   const displayOriginAndBase = displayUrl.replace(/\/$/, '');
 
-  // Step 1: Establish Baseline 404 / SPA Catch-All Fingerprint
-  const randomSlug = `mlsa-kiit-404-check-${Date.now()}`;
+  const randomSlug = `sentinel-404-check-${Date.now()}`;
   const baselineUrl = `${originAndBase}/${randomSlug}`;
   let baselineStatus = 404;
   let baselineContentType = '';
@@ -789,7 +880,9 @@ async function runSensitiveRouteProbing(
   try {
     const baseRes = await fetchWithTimeout(baselineUrl, { method: 'GET' }, 5000);
     baselineStatus = baseRes.status;
-    baselineContentType = (baseRes.headers.get('content-type') || '').toLowerCase();
+    baselineContentType = (
+      baseRes.headers.get('content-type') || ''
+    ).toLowerCase();
     const text = await baseRes.text();
     baselineBodySample = text.slice(0, 300).trim();
     if (
@@ -854,7 +947,6 @@ async function runSensitiveRouteProbing(
     },
   ];
 
-  // Check discovered script sourcemaps (.map)
   for (const scriptSrc of discoveredScripts.slice(0, 3)) {
     if (scriptSrc.endsWith('.js')) {
       const mapPath = scriptSrc.startsWith('/')
@@ -892,9 +984,10 @@ async function runSensitiveRouteProbing(
   const testedRoutes: ProbeRecord[] = [];
 
   for (const probe of probeTargets) {
-    const fullProbeUrl = probe.path.startsWith(basePath) && basePath !== ''
-      ? `${baseObj.origin}${probe.path}`
-      : `${originAndBase}${probe.path}`;
+    const fullProbeUrl =
+      probe.path.startsWith(basePath) && basePath !== ''
+        ? `${baseObj.origin}${probe.path}`
+        : `${originAndBase}${probe.path}`;
     const displayProbeUrl =
       probe.path.startsWith(basePath) && basePath !== ''
         ? `${displayUrl.split(basePath)[0]}${probe.path}`
@@ -996,6 +1089,716 @@ async function runSensitiveRouteProbing(
 }
 
 // ============================================================================
+// ENGINE 5: JS BUNDLE SECRET & HIDDEN API ROUTE EXTRACTOR
+// ============================================================================
+
+async function runJsBundleAudit(
+  targetUrl: string,
+  displayUrl: string,
+  discoveredScripts: string[]
+): Promise<{
+  findings: VerifiedFinding[];
+  passedChecks: PassedCheck[];
+  telemetry: NonNullable<RawAuditTelemetry['bundles']>;
+}> {
+  const findings: VerifiedFinding[] = [];
+  const passedChecks: PassedCheck[] = [];
+  const nowIso = new Date().toISOString();
+
+  const baseObj = new URL(targetUrl);
+  const discoveredEndpointsSet = new Set<string>();
+  const bundleNames: string[] = [];
+  let totalBytes = 0;
+
+  const candidateScripts = discoveredScripts
+    .filter((src) => !src.startsWith('http') || src.includes(baseObj.host))
+    .slice(0, 5);
+
+  for (const scriptSrc of candidateScripts) {
+    let fullScriptUrl = scriptSrc;
+    let displayScriptUrl = scriptSrc;
+    if (scriptSrc.startsWith('/')) {
+      fullScriptUrl = `${baseObj.origin}${scriptSrc}`;
+      const displayOrigin = displayUrl.startsWith('http')
+        ? new URL(displayUrl).origin
+        : '';
+      displayScriptUrl = `${displayOrigin}${scriptSrc}`;
+    } else if (!scriptSrc.startsWith('http')) {
+      fullScriptUrl = `${baseObj.origin}/${scriptSrc}`;
+      displayScriptUrl = `${displayUrl.replace(/\/$/, '')}/${scriptSrc}`;
+    }
+
+    try {
+      const res = await fetchWithTimeout(fullScriptUrl, { method: 'GET' }, 5000);
+      if (!res.ok) continue;
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      const jsBody = await res.text();
+      if (ct.includes('text/html') || /<!doctype html/i.test(jsBody.slice(0, 150))) {
+        continue;
+      }
+
+      bundleNames.push(scriptSrc);
+      totalBytes += jsBody.length;
+
+      // 1. Extract internal/hidden API route strings
+      const routeMatches = jsBody.matchAll(
+        /["'`](\/(?:api|v[1-9]|admin|internal|graphql|auth)(?:\/[a-zA-Z0-9._-]+)*)["'`]/g
+      );
+      for (const m of routeMatches) {
+        discoveredEndpointsSet.add(m[1]);
+      }
+
+      // 2. Check for privileged admin/debug endpoints exposed in client bundle
+      const privilegedEndpoints = Array.from(discoveredEndpointsSet).filter(
+        (ep) => /\/(admin|internal|debug|export-users|private)/i.test(ep)
+      );
+      if (privilegedEndpoints.length > 0) {
+        findings.push({
+          id: `bundle-admin-routes-${scriptSrc.replace(/[^a-z0-9]/gi, '-')}`,
+          title: `Undocumented Admin / Internal API Routes Exposed in JS Bundle`,
+          severity: 'medium',
+          module: 'bundle',
+          cwe: 'CWE-200',
+          owasp: 'A01:2021 Broken Access Control',
+          affectedTarget: displayScriptUrl,
+          summary: `Extracted ${privilegedEndpoints.length} privileged or internal API endpoint path(s) compiled inside client bundle ${scriptSrc}.`,
+          impact:
+            'Attackers routinely scrape production JS bundles with LinkFinder to discover administrative and debug API routes that rely on security-by-obscurity.',
+          evidence: {
+            type: 'js-bundle',
+            rawProof: `Bundle: ${displayScriptUrl} (${jsBody.length} bytes)\nDiscovered Privileged Routes:\n${privilegedEndpoints.map((r) => `  • ${r}`).join('\n')}`,
+            reproductionCommand: `curl -s "${displayScriptUrl}" | grep -oE '"/(api|admin|internal)[^"]*"'`,
+            verifiedAt: nowIso,
+          },
+          remediation: {
+            summary:
+              'Enforce strict server-side RBAC middleware on all /admin and /internal routes and split administrative bundles from public visitor bundles.',
+            snippets: [
+              {
+                label: 'Express Admin RBAC Guard',
+                language: 'typescript',
+                code: `function requireAdminRole(req, res, next) {\n  if (!req.user || req.user.role !== 'admin') {\n    return res.status(403).json({ error: 'Forbidden: Admin access required' });\n  }\n  next();\n}\napp.use('/api/v1/admin', requireAdminRole);`,
+              },
+            ],
+          },
+        });
+      }
+
+      // 3. Scan JS bundle for leaked client-side API keys or tokens
+      const bundleSecretPatterns: Array<{
+        id: string;
+        name: string;
+        regex: RegExp;
+        severity: SeverityLevel;
+      }> = [
+        {
+          id: 'google-api-key',
+          name: 'Google / Firebase API Key (AIza...)',
+          regex: /\b(AIza[0-9A-Za-z\-_]{35})\b/,
+          severity: 'medium',
+        },
+        {
+          id: 'aws-key',
+          name: 'AWS Access Key ID (AKIA...)',
+          regex: /\b(AKIA[0-9A-Z]{16})\b/,
+          severity: 'critical',
+        },
+        {
+          id: 'stripe-secret',
+          name: 'Stripe Secret Key (sk_...)',
+          regex: /\b(sk_(live|test)_[0-9a-zA-Z]{20,})\b/,
+          severity: 'critical',
+        },
+      ];
+
+      for (const pat of bundleSecretPatterns) {
+        const match = jsBody.match(pat.regex);
+        if (match) {
+          findings.push({
+            id: `bundle-secret-${pat.id}-${scriptSrc.replace(/[^a-z0-9]/gi, '-')}`,
+            title: `Leaked ${pat.name} Compiled into Client JavaScript Bundle`,
+            severity: pat.severity,
+            module: 'bundle',
+            cwe: 'CWE-798',
+            owasp: 'A05:2021 Security Misconfiguration',
+            affectedTarget: displayScriptUrl,
+            summary: `Detected a hardcoded ${pat.name} directly inside the public JavaScript bundle (${scriptSrc}).`,
+            impact:
+              'Any visitor can inspect the browser Network tab, extract this credential from the bundle, and abuse the associated cloud/API quota or service.',
+            evidence: {
+              type: 'js-bundle',
+              rawProof: `Bundle URL: ${displayScriptUrl}\nMatched Credential Signature: ${match[1]}`,
+              reproductionCommand: `curl -s "${displayScriptUrl}" | grep -oE "${pat.regex.source}"`,
+              verifiedAt: nowIso,
+            },
+            remediation: {
+              summary:
+                'Never prefix sensitive keys with VITE_ or NEXT_PUBLIC_. Proxy third-party API calls through server-side backend routes.',
+              snippets: [
+                {
+                  label: 'Server-Side API Proxy',
+                  language: 'typescript',
+                  code: `// Move secret key to server.ts and expose a rate-limited proxy route:\napp.post('/api/proxy-service', async (req, res) => {\n  const apiKey = process.env.PRIVATE_SERVICE_KEY;\n  // Perform request server-side\n});`,
+                },
+              ],
+            },
+          });
+        }
+      }
+    } catch {
+      // ignore bundle fetch error
+    }
+  }
+
+  if (bundleNames.length > 0 && findings.length === 0) {
+    passedChecks.push({
+      id: 'pass-js-bundles-clean',
+      title: 'Client JavaScript Bundles Verified Free of Leaked Secrets',
+      module: 'bundle',
+      target: displayUrl,
+      proofSummary: `Inspected ${bundleNames.length} bundle(s) (${totalBytes} bytes); 0 leaked keys found`,
+    });
+  }
+
+  return {
+    findings,
+    passedChecks,
+    telemetry: {
+      scriptsAnalyzed: bundleNames.length,
+      totalBytes,
+      bundleNames,
+      discoveredEndpoints: Array.from(discoveredEndpointsSet),
+    },
+  };
+}
+
+// ============================================================================
+// ENGINE 6: JWT TOKEN & WEAK SIGNING SECRET CRYPTOGRAPHIC AUDITOR
+// ============================================================================
+
+const COMMON_WEAK_JWT_SECRETS = [
+  'secret',
+  'jwt_secret',
+  'password',
+  '123456',
+  '12345678',
+  '1234567890',
+  'changeme',
+  'supersecret',
+  'admin',
+  'production',
+  'staging',
+  'service',
+  'internal',
+  'development',
+  'dev',
+  'test',
+  'default',
+  'your-256-bit-secret',
+  'jwt-secret-key',
+  'mysecretkey',
+  'secretkey',
+  'privatekey',
+  'hackathon',
+];
+
+function crackHmacJwtSecret(
+  headerB64: string,
+  payloadB64: string,
+  signatureB64: string,
+  alg: string
+): string | null {
+  const hashAlg =
+    alg === 'HS256'
+      ? 'sha256'
+      : alg === 'HS384'
+      ? 'sha384'
+      : alg === 'HS512'
+      ? 'sha512'
+      : null;
+  if (!hashAlg) return null;
+
+  const signingInput = `${headerB64}.${payloadB64}`;
+  for (const candidate of COMMON_WEAK_JWT_SECRETS) {
+    const computed = crypto
+      .createHmac(hashAlg, candidate)
+      .update(signingInput)
+      .digest('base64url');
+    if (computed === signatureB64) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function runJwtCryptographicAudit(
+  setCookieValues: string[],
+  userSuppliedJwt?: string
+): {
+  findings: VerifiedFinding[];
+  passedChecks: PassedCheck[];
+  telemetry: NonNullable<RawAuditTelemetry['jwt']>;
+} {
+  const findings: VerifiedFinding[] = [];
+  const passedChecks: PassedCheck[] = [];
+  const nowIso = new Date().toISOString();
+  const decodedTokens: DecodedJwtRecord[] = [];
+
+  const candidateTokens: Array<{ source: string; token: string }> = [];
+
+  // 1. Extract JWTs from Set-Cookie headers
+  const jwtRegex = /\b(eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)\b/g;
+  for (const cookieStr of setCookieValues) {
+    const matches = cookieStr.matchAll(jwtRegex);
+    for (const m of matches) {
+      candidateTokens.push({ source: 'HTTP Set-Cookie Header', token: m[1] });
+    }
+  }
+
+  // 2. Include user-supplied JWT token if provided
+  if (userSuppliedJwt && userSuppliedJwt.trim()) {
+    const cleaned = userSuppliedJwt
+      .trim()
+      .replace(/^Bearer\s+/i, '')
+      .trim();
+    const matches = cleaned.match(jwtRegex);
+    if (matches && matches[0]) {
+      candidateTokens.push({
+        source: 'Manual JWT Inspector Input',
+        token: matches[0],
+      });
+    }
+  }
+
+  for (const item of candidateTokens) {
+    const parts = item.token.split('.');
+    if (parts.length < 2) continue;
+
+    try {
+      const header = JSON.parse(
+        Buffer.from(parts[0], 'base64url').toString('utf8')
+      ) as Record<string, unknown>;
+      const payload = JSON.parse(
+        Buffer.from(parts[1], 'base64url').toString('utf8')
+      ) as Record<string, unknown>;
+      const sig = parts[2] || '';
+      const alg = String(header.alg || 'none');
+
+      const crackedSecret = sig
+        ? crackHmacJwtSecret(parts[0], parts[1], sig, alg)
+        : null;
+
+      decodedTokens.push({
+        source: item.source,
+        rawPreview: `${item.token.slice(0, 32)}...`,
+        header,
+        payload,
+        weakSecretMatched: crackedSecret,
+      });
+
+      // Check 1: alg: "none"
+      if (alg.toLowerCase() === 'none' || !sig) {
+        findings.push({
+          id: `jwt-alg-none-${decodedTokens.length}`,
+          title: 'Critical JWT Unverified Signature Algorithm (alg: "none")',
+          severity: 'critical',
+          module: 'jwt',
+          cwe: 'CWE-347',
+          owasp: 'A07:2021 Identification and Authentication Failures',
+          affectedTarget: item.source,
+          summary:
+            'The inspected JSON Web Token uses alg: "none" or lacks a cryptographic signature segment.',
+          impact:
+            'Attackers can modify the JWT payload (e.g., setting role: "admin") and strip the signature to impersonate any user.',
+          evidence: {
+            type: 'jwt-crypto',
+            rawProof: `Token Source: ${item.source}\nDecoded Header: ${JSON.stringify(header)}\nDecoded Payload: ${JSON.stringify(payload, null, 2)}`,
+            reproductionCommand: `echo "${parts[0]}" | base64 -d`,
+            verifiedAt: nowIso,
+          },
+          remediation: {
+            summary:
+              'Explicitly specify allowed algorithms (e.g. algorithms: ["HS256"] or ["RS256"]) in jwt.verify() and reject unsigned tokens.',
+            snippets: [
+              {
+                label: 'jsonwebtoken Strict Verification',
+                language: 'typescript',
+                code: `const verified = jwt.verify(token, process.env.JWT_SECRET!, {\n  algorithms: ['HS256'],\n});`,
+              },
+            ],
+          },
+        });
+      }
+
+      // Check 2: Weak / Default Signing Secret Cracked!
+      if (crackedSecret) {
+        const forgedPayload = { ...payload, role: 'admin', isSuperAdmin: true };
+        const forgedAdminJwt = createSignedJwt(forgedPayload, crackedSecret);
+
+        findings.push({
+          id: `jwt-weak-hmac-secret-${decodedTokens.length}`,
+          title: `Critical Weak JWT Signing Secret Cracked ("${crackedSecret}")`,
+          severity: 'critical',
+          module: 'jwt',
+          cwe: 'CWE-798',
+          owasp: 'A02:2021 Cryptographic Failures',
+          affectedTarget: item.source,
+          summary: `The ${alg} signature of the JWT was cryptographically verified against the weak signing secret "${crackedSecret}".`,
+          impact:
+            'Because the signing secret is weak/default, an attacker can offline-crack the key and forge valid admin session tokens for any user ID or role.',
+          evidence: {
+            type: 'jwt-crypto',
+            rawProof: `Token Source: ${item.source}\nAlgorithm: ${alg}\nCracked HMAC Secret: "${crackedSecret}"\nOriginal Payload: ${JSON.stringify(payload)}\n\nVerified Forged Admin JWT Proof (Signed with "${crackedSecret}"):\n${forgedAdminJwt}`,
+            reproductionCommand: `node -e 'const crypto=require("crypto"); console.log(crypto.createHmac("sha256","${crackedSecret}").update("${parts[0]}.${parts[1]}").digest("base64url") === "${sig}")'`,
+            verifiedAt: nowIso,
+          },
+          exploitProof: {
+            type: 'jwt-forge',
+            crackedSecret,
+            forgedAdminJwt,
+          },
+          remediation: {
+            summary:
+              'Generate a high-entropy 256-bit (32+ byte) random secret using crypto.randomBytes(32).toString("hex") and rotate all active sessions.',
+            snippets: [
+              {
+                label: 'Generate 256-Bit Secret',
+                language: 'bash',
+                code: `node -e "console.log('JWT_SECRET=' + require('crypto').randomBytes(32).toString('hex'))"`,
+              },
+            ],
+          },
+        });
+      }
+
+      // Check 3: Missing Expiration (exp) Claim
+      if (typeof payload.exp !== 'number') {
+        findings.push({
+          id: `jwt-missing-exp-${decodedTokens.length}`,
+          title: 'JWT Session Token Missing Expiration Claim (exp)',
+          severity: 'medium',
+          module: 'jwt',
+          cwe: 'CWE-613',
+          owasp: 'A07:2021 Identification and Authentication Failures',
+          affectedTarget: item.source,
+          summary:
+            'The decoded JWT payload does not contain an exp (Expiration Time) timestamp claim.',
+          impact:
+            'If a session token is leaked or captured, it remains valid indefinitely unless the signing key is rotated.',
+          evidence: {
+            type: 'jwt-crypto',
+            rawProof: `Decoded JWT Payload:\n${JSON.stringify(payload, null, 2)}\nexp claim: <ABSENT>`,
+            reproductionCommand: `echo "${parts[1]}" | base64 -d`,
+            verifiedAt: nowIso,
+          },
+          remediation: {
+            summary:
+              'Always include an expiresIn option (e.g. "1h" or "15m") when signing JWTs.',
+            snippets: [
+              {
+                label: 'Set JWT Expiration',
+                language: 'typescript',
+                code: `const token = jwt.sign({ sub: user.id, role: user.role }, process.env.JWT_SECRET!, {\n  expiresIn: '1h',\n});`,
+              },
+            ],
+          },
+        });
+      }
+
+      if (
+        alg.toLowerCase() !== 'none' &&
+        !crackedSecret &&
+        typeof payload.exp === 'number'
+      ) {
+        passedChecks.push({
+          id: `pass-jwt-${decodedTokens.length}`,
+          title: `JWT Signature & Expiration Claims Verified (${item.source})`,
+          module: 'jwt',
+          target: item.source,
+          proofSummary: `Algorithm ${alg} resistant to dictionary secret cracking; exp claim present`,
+        });
+      }
+    } catch {
+      // ignore malformed base64
+    }
+  }
+
+  return {
+    findings,
+    passedChecks,
+    telemetry: {
+      tokensInspected: decodedTokens.length,
+      decodedTokens,
+    },
+  };
+}
+
+// ============================================================================
+// ENGINE 7: GRAPHQL INTROSPECTION, HTTP VERB & OPEN REDIRECT PROBER
+// ============================================================================
+
+async function runProtocolAndGraphqlProbing(
+  targetUrl: string,
+  displayUrl: string
+): Promise<{
+  findings: VerifiedFinding[];
+  passedChecks: PassedCheck[];
+  telemetry: NonNullable<RawAuditTelemetry['protocol']>;
+}> {
+  const findings: VerifiedFinding[] = [];
+  const passedChecks: PassedCheck[] = [];
+  const nowIso = new Date().toISOString();
+
+  const baseObj = new URL(targetUrl);
+  const basePath = baseObj.pathname.replace(/\/$/, '');
+  const originAndBase = `${baseObj.origin}${basePath}`;
+  const displayOriginAndBase = displayUrl.replace(/\/$/, '');
+
+  let allowedMethods: string[] = [];
+  let traceEnabled = false;
+  let graphqlEndpoint: string | null = null;
+  let graphqlIntrospectionOpen = false;
+  let openRedirectParam: string | null = null;
+
+  // 1. HTTP OPTIONS & Verb Inspection
+  try {
+    const optRes = await fetchWithTimeout(
+      targetUrl,
+      { method: 'OPTIONS' },
+      5000
+    );
+    const allowHdr =
+      optRes.headers.get('allow') ||
+      optRes.headers.get('access-control-allow-methods') ||
+      '';
+    if (allowHdr) {
+      allowedMethods = allowHdr
+        .split(',')
+        .map((m) => m.trim().toUpperCase())
+        .filter(Boolean);
+    }
+    if (allowedMethods.includes('TRACE')) {
+      traceEnabled = true;
+      findings.push({
+        id: 'protocol-dangerous-http-verbs',
+        title: `Insecure HTTP Methods Advertised (${allowedMethods.join(', ')})`,
+        severity: 'low',
+        module: 'protocol',
+        cwe: 'CWE-749',
+        owasp: 'A05:2021 Security Misconfiguration',
+        affectedTarget: displayUrl,
+        summary: `The OPTIONS response advertises ${allowedMethods.join(', ')}, including TRACE / state-mutating verbs on the public endpoint.`,
+        impact:
+          'Enabling TRACE can expose endpoints to Cross-Site Tracing (XST), while unauthenticated PUT/DELETE methods can allow resource tampering.',
+        evidence: {
+          type: 'protocol-probe',
+          rawProof: `OPTIONS ${displayUrl} -> HTTP ${optRes.status}\nAllow / Access-Control-Allow-Methods: ${allowHdr}`,
+          reproductionCommand: `curl -sI -X OPTIONS "${displayUrl}" | grep -iE "allow"`,
+          verifiedAt: nowIso,
+        },
+        remediation: {
+          summary:
+            'Disable TRACE and restrict allowed HTTP methods to only those required by each route (e.g. GET, POST).',
+          snippets: [
+            {
+              label: 'Express Method Filter',
+              language: 'typescript',
+              code: `app.use((req, res, next) => {\n  if (req.method === 'TRACE' || req.method === 'TRACK') {\n    return res.status(405).end();\n  }\n  next();\n});`,
+            },
+          ],
+        },
+      });
+    } else {
+      passedChecks.push({
+        id: 'pass-http-verbs',
+        title: 'HTTP Verb & TRACE Restriction Verified',
+        module: 'protocol',
+        target: displayUrl,
+        proofSummary: `OPTIONS check completed; TRACE disabled`,
+      });
+    }
+  } catch {
+    // ignore OPTIONS error
+  }
+
+  // 2. GraphQL Unauthenticated Schema Introspection Probe
+  const gqlPaths = ['/graphql', '/api/graphql'];
+  for (const gqlPath of gqlPaths) {
+    const fullGqlUrl = `${originAndBase}${gqlPath}`;
+    const displayGqlUrl = `${displayOriginAndBase}${gqlPath}`;
+    try {
+      const gqlRes = await fetchWithTimeout(
+        fullGqlUrl,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: '{ __schema { queryType { name } types { name } } }',
+          }),
+        },
+        5000
+      );
+      if (gqlRes.ok) {
+        const text = await gqlRes.text();
+        try {
+          const parsed = JSON.parse(text) as {
+            data?: {
+              __schema?: {
+                queryType?: { name?: string };
+                types?: Array<{ name: string }>;
+              };
+            };
+          };
+          if (parsed?.data?.__schema) {
+            graphqlEndpoint = displayGqlUrl;
+            graphqlIntrospectionOpen = true;
+            const typeNames = (parsed.data.__schema.types || [])
+              .map((t) => t.name)
+              .filter((n) => !n.startsWith('__'))
+              .slice(0, 10);
+
+            findings.push({
+              id: `protocol-graphql-introspection-${gqlPath.replace(/\W/g, '')}`,
+              title: `Unauthenticated GraphQL Schema Introspection Enabled (${gqlPath})`,
+              severity: 'medium',
+              module: 'protocol',
+              cwe: 'CWE-200',
+              owasp: 'A05:2021 Security Misconfiguration',
+              affectedTarget: displayGqlUrl,
+              summary: `The GraphQL endpoint at ${displayGqlUrl} responded to an unauthenticated __schema introspection query with the full schema definition.`,
+              impact:
+                'Attackers can dump every query, mutation, input object, and internal data model (such as AdminCredentials or PaymentRecord) to craft targeted attacks.',
+              evidence: {
+                type: 'protocol-probe',
+                rawProof: `POST ${displayGqlUrl}\nQuery: { __schema { queryType { name } types { name } } }\n\nDiscovered Schema Types: ${typeNames.join(', ')}\nRaw Response Excerpt:\n${text.slice(0, 360)}`,
+                reproductionCommand: `curl -s -X POST "${displayGqlUrl}" -H "Content-Type: application/json" -d '{"query":"{ __schema { types { name } } }"}'`,
+                verifiedAt: nowIso,
+              },
+              exploitProof: {
+                type: 'graphql',
+                targetUrl: displayGqlUrl,
+                graphqlTypes: typeNames,
+              },
+              remediation: {
+                summary:
+                  'Disable GraphQL schema introspection in production environments.',
+                snippets: [
+                  {
+                    label: 'Apollo Server Config',
+                    language: 'typescript',
+                    code: `const server = new ApolloServer({\n  typeDefs,\n  resolvers,\n  introspection: process.env.NODE_ENV !== 'production',\n});`,
+                  },
+                ],
+              },
+            });
+            break;
+          }
+        } catch {
+          // Not JSON
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!graphqlIntrospectionOpen) {
+    passedChecks.push({
+      id: 'pass-graphql-introspection',
+      title: 'GraphQL Unauthenticated Introspection Protected',
+      module: 'protocol',
+      target: displayUrl,
+      proofSummary:
+        'Probed /graphql and /api/graphql — no unauthenticated schema dump exposed',
+    });
+  }
+
+  // 3. Unvalidated Open Redirect Probe (Safe Manual Redirect Check)
+  const canaryRedirectTarget = 'https://evil-redirect.sentinel.audit';
+  const redirectParams = ['redirect', 'next', 'url', 'returnTo'];
+  for (const param of redirectParams) {
+    const sep = targetUrl.includes('?') ? '&' : '?';
+    const probeUrl = `${targetUrl}${sep}${param}=${encodeURIComponent(canaryRedirectTarget)}`;
+    const displayProbeUrl = `${displayUrl}${sep}${param}=${encodeURIComponent(canaryRedirectTarget)}`;
+    try {
+      const redRes = await fetchWithTimeout(
+        probeUrl,
+        { method: 'GET', redirect: 'manual' },
+        4500
+      );
+      const locationHdr = redRes.headers.get('location') || '';
+      if (
+        redRes.status >= 300 &&
+        redRes.status < 400 &&
+        locationHdr.startsWith(canaryRedirectTarget)
+      ) {
+        openRedirectParam = param;
+        findings.push({
+          id: `protocol-open-redirect-${param}`,
+          title: `Unvalidated Open Redirect via "?${param}=" Query Parameter`,
+          severity: 'high',
+          module: 'protocol',
+          cwe: 'CWE-601',
+          owasp: 'A01:2021 Broken Access Control',
+          affectedTarget: displayProbeUrl,
+          summary: `Passing ?${param}=${canaryRedirectTarget} caused the server to issue an HTTP ${redRes.status} redirect to the untrusted external domain.`,
+          impact:
+            'Attackers can craft authentic-looking trusted links that redirect users after authentication to credential-harvesting phishing portals or OAuth token theft traps.',
+          evidence: {
+            type: 'protocol-probe',
+            rawProof: `GET ${displayProbeUrl}\nHTTP/${redRes.status}\nLocation: ${locationHdr}`,
+            reproductionCommand: `curl -sI "${displayProbeUrl}" | grep -iE "HTTP/|location:"`,
+            verifiedAt: nowIso,
+          },
+          exploitProof: {
+            type: 'open-redirect',
+            targetUrl: displayProbeUrl,
+            redirectLocation: locationHdr,
+          },
+          remediation: {
+            summary:
+              'Only allow relative paths starting with a single "/" (and not "//") or validate redirect targets against a strict domain allowlist.',
+            snippets: [
+              {
+                label: 'Safe Redirect Validator',
+                language: 'typescript',
+                code: `function getSafeRedirectPath(input: unknown): string {\n  if (typeof input === 'string' && input.startsWith('/') && !input.startsWith('//')) {\n    return input;\n  }\n  return '/dashboard';\n}`,
+              },
+            ],
+          },
+        });
+        break;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!openRedirectParam) {
+    passedChecks.push({
+      id: 'pass-open-redirect',
+      title: 'URL Redirect Query Parameters Validated Against Open Redirects',
+      module: 'protocol',
+      target: displayUrl,
+      proofSummary:
+        'Tested ?redirect=, ?next=, ?url=, ?returnTo= — no external 3xx Location reflection',
+    });
+  }
+
+  return {
+    findings,
+    passedChecks,
+    telemetry: {
+      allowedMethods,
+      traceEnabled,
+      graphqlEndpoint,
+      graphqlIntrospectionOpen,
+      openRedirectParam,
+    },
+  };
+}
+
+// ============================================================================
 // GITHUB PUBLIC REPOSITORY FETCHER (Manifest & Source Files)
 // ============================================================================
 
@@ -1018,7 +1821,6 @@ async function fetchGithubRepoFiles(githubRepoUrl: string): Promise<{
   const repo = parts[1];
   const repoLabel = `${owner}/${repo}`;
 
-  // Fetch default branch info
   const repoInfoRes = await fetchWithTimeout(
     `https://api.github.com/repos/${owner}/${repo}`,
     {
@@ -1034,7 +1836,6 @@ async function fetchGithubRepoFiles(githubRepoUrl: string): Promise<{
   const repoInfo = (await repoInfoRes.json()) as { default_branch?: string };
   const branch = repoInfo.default_branch || 'main';
 
-  // Fetch recursive git tree
   const treeRes = await fetchWithTimeout(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
     {
@@ -1072,7 +1873,6 @@ async function fetchGithubRepoFiles(githubRepoUrl: string): Promise<{
         /\.(ts|tsx|js|jsx|mjs|py|env|json|yml|yaml|html)$/i.test(item.path)
       );
     })
-    // Prioritize package.json and server/auth/config/src files
     .sort((a, b) => {
       if (a.path === 'package.json') return -1;
       if (b.path === 'package.json') return 1;
@@ -1140,7 +1940,8 @@ async function runDependencyCveAudit(
     return { findings, passedChecks };
   }
 
-  const pkgEntries: Array<{ name: string; version: string; isDev: boolean }> = [];
+  const pkgEntries: Array<{ name: string; version: string; isDev: boolean }> =
+    [];
   for (const [name, ver] of Object.entries(parsedPkg.dependencies || {})) {
     const cleanVer = cleanSemverVersion(String(ver));
     if (cleanVer) pkgEntries.push({ name, version: cleanVer, isDev: false });
@@ -1195,7 +1996,6 @@ async function runDependencyCveAudit(
 
       if (vulnIds.length > 0) {
         vulnerablePackages++;
-        // Hydrate top 2 advisories per vulnerable package for detailed CVE proof
         const topIds = vulnIds.slice(0, 2);
         for (const vulnId of topIds) {
           try {
@@ -1412,7 +2212,7 @@ const SAST_RULES: SastRule[] = [
     cwe: 'CWE-798',
     owasp: 'A07:2021 Identification and Authentication Failures',
     regex:
-      /\b(jwt_secret|jwtSecret|database_url|db_password|dbPassword|secretKey|API_SECRET)\s*[:=]\s*["'`]([^"'`$]{10,})["'`]/i,
+      /\b(jwt_secret|jwtSecret|database_url|db_password|dbPassword|secretKey|API_SECRET)\s*[:=]\s*["'`]([^"'`$]{6,})["'`]/i,
     summary:
       'A sensitive secret identifier (JWT secret, database URL, or API secret) is assigned a hardcoded string literal.',
     impact:
@@ -1449,7 +2249,7 @@ const SAST_RULES: SastRule[] = [
     fixSnippet: {
       label: 'Parameterized SQL Query',
       language: 'typescript',
-      code: `// Safe parameterized query:\nconst result = await db.query(\n  'SELECT id, email, role FROM users WHERE email = $1',\n  [req.body.email]\n);`,
+      code: `const result = await db.query(\n  'SELECT id, email, role FROM users WHERE email = $1',\n  [req.body.email]\n);`,
     },
   },
   {
@@ -1577,7 +2377,6 @@ function runSourceCodeSast(
     for (let idx = 0; idx < lines.length; idx++) {
       const line = lines[idx];
       const trimmed = line.trim();
-      // Skip pure single-line comments
       if (
         trimmed.startsWith('//') ||
         trimmed.startsWith('/*') ||
@@ -1664,26 +2463,34 @@ app.post('/api/audit/run', async (req, res) => {
   const startTotalMs = Date.now();
   try {
     const {
-      projectName = 'MLSA KIIT Chapter Project',
+      projectName = 'Production Web Application',
       targetUrl = '',
       githubRepoUrl = '',
+      jwtToken = '',
       uploadedFiles = [],
       modules = {
         httpHeaders: true,
         routeProbing: true,
         dependencyCve: true,
         sourceSast: true,
+        jsBundleAudit: true,
+        jwtAudit: true,
+        protocolProbing: true,
       },
     } = req.body as {
       projectName?: string;
       targetUrl?: string;
       githubRepoUrl?: string;
+      jwtToken?: string;
       uploadedFiles?: UploadedCodeFile[];
       modules?: {
         httpHeaders: boolean;
         routeProbing: boolean;
         dependencyCve: boolean;
         sourceSast: boolean;
+        jsBundleAudit?: boolean;
+        jwtAudit?: boolean;
+        protocolProbing?: boolean;
       };
     };
 
@@ -1698,9 +2505,11 @@ app.post('/api/audit/run', async (req, res) => {
       ? `${req.protocol}://${reqHost}${targetUrl.trim()}`
       : normalizedUrl;
 
-    // 1. Live URL HTTP + Route Probing
-    if (normalizedUrl && (modules.httpHeaders || modules.routeProbing)) {
-      let discoveredScripts: string[] = [];
+    let discoveredScripts: string[] = [];
+    let capturedCookies: string[] = [];
+
+    // 1. Live URL HTTP + Route + JS Bundle + Protocol Probing
+    if (normalizedUrl) {
       if (modules.httpHeaders) {
         enabledModules.push('http');
         const httpResult = await runHttpHeaderInspection(
@@ -1711,6 +2520,7 @@ app.post('/api/audit/run', async (req, res) => {
         allPassedChecks.push(...httpResult.passedChecks);
         rawTelemetry.http = httpResult.telemetry;
         discoveredScripts = httpResult.telemetry.discoveredScripts;
+        capturedCookies = httpResult.setCookieValues;
       }
 
       if (modules.routeProbing) {
@@ -1724,9 +2534,46 @@ app.post('/api/audit/run', async (req, res) => {
         allPassedChecks.push(...probeResult.passedChecks);
         rawTelemetry.probes = probeResult.telemetry;
       }
+
+      if (modules.jsBundleAudit !== false && discoveredScripts.length > 0) {
+        enabledModules.push('bundle');
+        const bundleResult = await runJsBundleAudit(
+          normalizedUrl,
+          displayUrl,
+          discoveredScripts
+        );
+        allFindings.push(...bundleResult.findings);
+        allPassedChecks.push(...bundleResult.passedChecks);
+        rawTelemetry.bundles = bundleResult.telemetry;
+      }
+
+      if (modules.protocolProbing !== false) {
+        enabledModules.push('protocol');
+        const protoResult = await runProtocolAndGraphqlProbing(
+          normalizedUrl,
+          displayUrl
+        );
+        allFindings.push(...protoResult.findings);
+        allPassedChecks.push(...protoResult.passedChecks);
+        rawTelemetry.protocol = protoResult.telemetry;
+      }
     }
 
-    // 2. Collect Code & Manifest Files (Uploaded + GitHub Repo)
+    // 2. JWT & Session Cookie Cryptographic Audit (Captured Cookies + Manual Input)
+    if (
+      modules.jwtAudit !== false &&
+      (capturedCookies.length > 0 || (jwtToken && jwtToken.trim()))
+    ) {
+      enabledModules.push('jwt');
+      const jwtResult = runJwtCryptographicAudit(capturedCookies, jwtToken);
+      allFindings.push(...jwtResult.findings);
+      allPassedChecks.push(...jwtResult.passedChecks);
+      if (jwtResult.telemetry.tokensInspected > 0) {
+        rawTelemetry.jwt = jwtResult.telemetry;
+      }
+    }
+
+    // 3. Collect Code & Manifest Files (Uploaded + GitHub Repo)
     const combinedFiles: Array<{
       name: string;
       content: string;
@@ -1750,7 +2597,7 @@ app.post('/api/audit/run', async (req, res) => {
       }
     }
 
-    // 3. Dependency CVE Audit via OSV.dev
+    // 4. Dependency CVE Audit via OSV.dev
     if (modules.dependencyCve && combinedFiles.length > 0) {
       enabledModules.push('dependencies');
       const depResult = await runDependencyCveAudit(combinedFiles);
@@ -1761,7 +2608,7 @@ app.post('/api/audit/run', async (req, res) => {
       }
     }
 
-    // 4. Deterministic Source Code SAST & Secret Detection
+    // 5. Deterministic Source Code SAST & Secret Detection
     if (modules.sourceSast && combinedFiles.length > 0) {
       enabledModules.push('sast');
       const sastResult = runSourceCodeSast(combinedFiles);
@@ -1772,7 +2619,6 @@ app.post('/api/audit/run', async (req, res) => {
       }
     }
 
-    // Sort findings by severity (Critical -> High -> Medium -> Low)
     const severityRank: Record<SeverityLevel, number> = {
       critical: 0,
       high: 1,
@@ -1784,8 +2630,8 @@ app.post('/api/audit/run', async (req, res) => {
     );
 
     const report: AuditReport = {
-      id: `mlsa-kiit-audit-${Date.now()}`,
-      projectName: projectName.trim() || 'MLSA KIIT Project Audit',
+      id: `sentinel-audit-${Date.now()}`,
+      projectName: projectName.trim() || 'Target Application Audit',
       timestamp: new Date().toISOString(),
       durationMs: Date.now() - startTotalMs,
       targetSummary: {
@@ -1828,7 +2674,7 @@ async function startServer() {
 
   const PORT = 3000;
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`MLSA KIIT Sentinel server listening on http://0.0.0.0:${PORT}`);
+    console.log(`Sentinel AppSec server listening on http://0.0.0.0:${PORT}`);
   });
 }
 

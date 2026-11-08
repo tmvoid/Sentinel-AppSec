@@ -9,14 +9,20 @@ import {
   CheckCircle2,
   ChevronRight,
   Code2,
+  FileCode2,
   FileDown,
   FilePlus2,
   FileText,
+  Flame,
   FolderGit2,
+  GitCompare,
   Globe,
+  KeyRound,
   Loader2,
+  Network,
   PackageCheck,
   Play,
+  RefreshCw,
   RotateCcw,
   Search,
   Shield,
@@ -24,22 +30,28 @@ import {
   ShieldCheck,
   Trash2,
   Upload,
+  Wrench,
+  X,
 } from 'lucide-react';
 import { EvidenceDrawer } from './components/EvidenceDrawer.tsx';
+import { HardeningStudio } from './components/HardeningStudio.tsx';
 import MicroSlats from './components/MicroSlats.jsx';
 import { ReportExportModal } from './components/ReportExportModal.tsx';
 import { BlurRevealHeading, SpotlightCard } from './components/SpotlightCard.tsx';
+import { ThemeToggle, type ThemeMode } from './components/ThemeToggle.tsx';
 import type {
   AuditModuleId,
   AuditReport,
   AuditTargetConfig,
+  RemediationDelta,
   SeverityLevel,
   UploadedCodeFile,
   VerifiedFinding,
 } from './types/audit.ts';
 
-const STORAGE_KEY = 'mlsa_kiit_real_audits_v2';
-const LEGACY_STORAGE_KEY = 'mlsa_kiit_sentinel_audit_history_v1';
+const STORAGE_KEY = 'sentinel_appsec_real_audits_v3';
+const LEGACY_STORAGE_KEY = 'sentinel_audit_history_v1';
+const THEME_STORAGE_KEY = 'sentinel_theme_mode';
 
 const SEVERITY_LABEL_STYLES: Record<SeverityLevel, string> = {
   critical: 'text-[#EF4444] font-semibold',
@@ -53,20 +65,82 @@ const MODULE_NAMES: Record<AuditModuleId, string> = {
   exposure: 'Route & Sourcemap Prober',
   dependencies: 'OSV.dev Dependency CVE',
   sast: 'Source Code SAST & Secrets',
+  bundle: 'JS Bundle & API Harvester',
+  jwt: 'JWT Weak-Secret Auditor',
+  protocol: 'GraphQL, Verbs & Redirects',
 };
 
+function computeRemediationDelta(
+  before: AuditReport,
+  after: AuditReport
+): RemediationDelta {
+  const getKey = (f: VerifiedFinding) => `${f.module}::${f.cwe}::${f.title}`;
+  const beforeMap = new Map(before.findings.map((f) => [getKey(f), f]));
+  const afterMap = new Map(after.findings.map((f) => [getKey(f), f]));
+
+  const resolvedFindings: VerifiedFinding[] = [];
+  for (const [k, f] of beforeMap.entries()) {
+    if (!afterMap.has(k)) {
+      resolvedFindings.push(f);
+    }
+  }
+
+  const remainingFindings: VerifiedFinding[] = [];
+  const newFindings: VerifiedFinding[] = [];
+  for (const [k, f] of afterMap.entries()) {
+    if (beforeMap.has(k)) {
+      remainingFindings.push(f);
+    } else {
+      newFindings.push(f);
+    }
+  }
+
+  return {
+    baselineReportId: before.id,
+    baselineProjectName: before.projectName,
+    baselineTimestamp: before.timestamp,
+    resolvedFindings,
+    remainingFindings,
+    newFindings,
+    passedDelta: after.passedChecks.length - before.passedChecks.length,
+  };
+}
+
 export default function App() {
+  // Polarity Theme State ('dark' Obsidian | 'bright' Alabaster)
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    try {
+      const saved = localStorage.getItem(THEME_STORAGE_KEY);
+      return saved === 'bright' ? 'bright' : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // ignore storage errors
+    }
+  }, [theme]);
+
   // Clean, Empty Initial State — Zero Pre-Filled Data or Pre-Loaded Reports
   const [config, setConfig] = useState<AuditTargetConfig>({
     projectName: '',
     targetUrl: '',
     githubRepoUrl: '',
+    jwtToken: '',
     uploadedFiles: [],
     modules: {
       httpHeaders: true,
       routeProbing: true,
       dependencyCve: true,
       sourceSast: true,
+      jsBundleAudit: true,
+      jwtAudit: true,
+      protocolProbing: true,
     },
   });
 
@@ -82,6 +156,9 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeReport, setActiveReport] = useState<AuditReport | null>(null);
+  const [remediationDelta, setRemediationDelta] =
+    useState<RemediationDelta | null>(null);
+
   const [auditHistory, setAuditHistory] = useState<AuditReport[]>(() => {
     try {
       localStorage.removeItem(LEGACY_STORAGE_KEY);
@@ -98,11 +175,12 @@ export default function App() {
     } catch {
       // ignore
     }
+    console.info('Sentinel AppSec — Engineered by Tanmay Bhardwaj (https://www.linkedin.com/in/tanmaysbhardwaj/ · https://github.com/tmvoid)');
   }, []);
 
   // Ledger Filtering & UI State
   const [activeLedgerTab, setActiveLedgerTab] = useState<
-    'findings' | 'passed' | 'telemetry'
+    'findings' | 'passed' | 'hardening' | 'telemetry'
   >('findings');
   const [severityFilter, setSeverityFilter] = useState<SeverityLevel | 'all'>(
     'all'
@@ -135,14 +213,18 @@ export default function App() {
   }, []);
 
   const executeAudit = useCallback(
-    async (targetConfig: AuditTargetConfig) => {
+    async (
+      targetConfig: AuditTargetConfig,
+      baselineForDelta?: AuditReport | null
+    ) => {
       if (
         !targetConfig.targetUrl.trim() &&
         !targetConfig.githubRepoUrl.trim() &&
+        !(targetConfig.jwtToken && targetConfig.jwtToken.trim()) &&
         targetConfig.uploadedFiles.length === 0
       ) {
         setErrorMessage(
-          'Please enter a Live Deployed URL, a Public GitHub Repository URL, or upload/paste project files to audit.'
+          'Please enter a Live Deployed URL, a Public GitHub Repository URL, a JWT token, or upload/paste project files to audit.'
         );
         return;
       }
@@ -154,7 +236,7 @@ export default function App() {
           targetConfig.projectName.trim() ||
           targetConfig.targetUrl.trim() ||
           targetConfig.githubRepoUrl.trim() ||
-          'MLSA KIIT Project Audit';
+          'Target Application Audit';
 
         const res = await fetch('/api/audit/run', {
           method: 'POST',
@@ -169,6 +251,13 @@ export default function App() {
           throw new Error(data.error || `Audit failed with HTTP ${res.status}`);
         }
         const report = data as AuditReport;
+        if (baselineForDelta) {
+          setRemediationDelta(
+            computeRemediationDelta(baselineForDelta, report)
+          );
+        } else {
+          setRemediationDelta(null);
+        }
         setActiveReport(report);
         saveReportToHistory(report);
         if (report.findings.length === 0 && report.passedChecks.length > 0) {
@@ -194,15 +283,20 @@ export default function App() {
       projectName: '',
       targetUrl: '',
       githubRepoUrl: '',
+      jwtToken: '',
       uploadedFiles: [],
       modules: {
         httpHeaders: true,
         routeProbing: true,
         dependencyCve: true,
         sourceSast: true,
+        jsBundleAudit: true,
+        jwtAudit: true,
+        protocolProbing: true,
       },
     });
     setActiveReport(null);
+    setRemediationDelta(null);
     setSelectedFileIndex(null);
     setErrorMessage(null);
   };
@@ -309,61 +403,77 @@ export default function App() {
   const hasTargetInput =
     Boolean(config.targetUrl.trim()) ||
     Boolean(config.githubRepoUrl.trim()) ||
+    Boolean(config.jwtToken && config.jwtToken.trim()) ||
     config.uploadedFiles.length > 0;
 
+  const isBright = theme === 'bright';
+
   return (
-    <div className="min-h-screen bg-[#04070E] text-[#F8FAFC] relative">
+    <div
+      className={`min-h-screen relative transition-colors duration-300 ${
+        isBright
+          ? 'theme-bright bg-[#EEF2F7] text-[#0F172A]'
+          : 'bg-[#04070E] text-[#F8FAFC]'
+      }`}
+    >
       {/* =====================================================================
           REACTBITS MICROSLATS INTERACTIVE WEBGL BACKGROUND
-          Tuned to MLSA Azure (#0078D4), Ambassador Cyan Glints (#7DD3FC) & Deep Obsidian
+          Dynamically adapts between Obsidian Dark and Alabaster Bright Daylight
          ===================================================================== */}
-      <div className="fixed inset-0 z-0 opacity-65">
+      <div
+        className={`fixed inset-0 z-0 transition-opacity duration-300 ${
+          isBright ? 'opacity-55' : 'opacity-65'
+        }`}
+      >
         <MicroSlats
           preset="tide"
-          color="#0078D4"
-          glintColor="#7DD3FC"
-          backgroundColor="#04070E"
+          color={isBright ? '#93C5FD' : '#0078D4'}
+          glintColor={isBright ? '#0078D4' : '#7DD3FC'}
+          backgroundColor={isBright ? '#EEF2F7' : '#04070E'}
           slatWidth={11}
           slatHeight={26}
           gap={3}
-          glint={0.55}
-          contrast={1.2}
+          glint={isBright ? 0.45 : 0.55}
+          contrast={isBright ? 1.05 : 1.2}
           interactive={true}
           cursorStrength={0.9}
         />
       </div>
       {/* Measured Radial Atmospheric Scrim for Crisp Glassmorphic Depth & WCAG Legibility */}
       <div
-        className="pointer-events-none fixed inset-0 z-0"
+        className="pointer-events-none fixed inset-0 z-0 transition-all duration-300"
         style={{
-          background:
-            'radial-gradient(ellipse 95% 80% at 50% 35%, rgba(4, 7, 14, 0.35) 0%, rgba(4, 7, 14, 0.78) 100%)',
+          background: isBright
+            ? 'radial-gradient(ellipse 95% 80% at 50% 35%, rgba(248, 250, 252, 0.42) 0%, rgba(238, 242, 247, 0.84) 100%)'
+            : 'radial-gradient(ellipse 95% 80% at 50% 35%, rgba(4, 7, 14, 0.35) 0%, rgba(4, 7, 14, 0.78) 100%)',
         }}
       />
 
       {/* =====================================================================
           STRICT 3-ZONE TOP BAR CONTRACT (GLASSMORPHIC HEADER)
-          [Brand Wordmark] — [4 Concise Nav Links] — [1 Primary Action Button]
+          [Brand Wordmark] — [4 Concise Nav Links] — [Theme Switcher + Primary CTA]
          ===================================================================== */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.10] bg-[#060B16]/65 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-[1360px] items-center justify-between gap-8 px-6 py-3.5">
+      <header
+        className={`sticky top-0 z-30 border-b backdrop-blur-2xl transition-colors duration-300 ${
+          isBright
+            ? 'border-slate-900/10 bg-white/75'
+            : 'border-white/[0.10] bg-[#060B16]/65'
+        }`}
+      >
+        <div className="mx-auto flex max-w-[1360px] items-center justify-between gap-6 px-6 py-3.5">
           {/* Zone 1: Single Brand Lockup */}
           <a
             href="#workspace"
-            className="flex items-center gap-3 font-display text-sm font-bold tracking-tight text-white whitespace-nowrap shrink-0"
+            className="flex items-center gap-2.5 font-display text-sm font-bold tracking-tight text-white whitespace-nowrap shrink-0"
           >
-            {!headerLogoError ? (
+            <div className="relative flex h-8 w-8 items-center justify-center rounded-full overflow-hidden ring-1 ring-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.3)] bg-[#070B14] shrink-0">
               <img
-                src="/assets/aistudio/image_950b45df.png"
-                alt="MLSA KIIT Emblem"
-                referrerPolicy="no-referrer"
-                onError={() => setHeaderLogoError(true)}
-                className="h-7 w-7 object-contain shrink-0"
+                src="/assets/aistudio/Code_Generated_Image_dcad87d9.png"
+                alt="Sentinel AppSec Logo"
+                className="h-full w-full object-cover"
               />
-            ) : (
-              <Shield className="h-5 w-5 text-[#38BDF8] shrink-0" />
-            )}
-            <span>MLSA KIIT Sentinel</span>
+            </div>
+            <span>Sentinel AppSec</span>
           </a>
 
           {/* Zone 2: 4 Single-Line Navigation Links */}
@@ -394,12 +504,17 @@ export default function App() {
             </a>
           </nav>
 
-          {/* Zone 3: 1 Primary Action */}
-          <div className="flex items-center shrink-0">
+          {/* Zone 3: Premium Polarity Toggler + 1 Primary Action */}
+          <div className="flex items-center gap-3 shrink-0">
+            <ThemeToggle theme={theme} onChange={setTheme} />
             <button
               onClick={() => setIsExportModalOpen(true)}
               disabled={!activeReport}
-              className="flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-1.5 text-xs font-semibold text-[#04070E] hover:bg-[#E2E8F0] disabled:bg-white/[0.1] disabled:text-white/40 transition-all whitespace-nowrap shrink-0 shadow-sm"
+              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all whitespace-nowrap shrink-0 shadow-sm ${
+                isBright
+                  ? 'bg-[#0078D4] text-white hover:bg-[#0067B8] disabled:bg-slate-900/10 disabled:text-slate-400'
+                  : 'bg-white text-[#04070E] hover:bg-[#E2E8F0] disabled:bg-white/[0.1] disabled:text-white/40'
+              }`}
             >
               <FileDown className="h-3.5 w-3.5" />
               <span>Export Report & PDF</span>
@@ -411,47 +526,44 @@ export default function App() {
       {/* Main Content Container (1440px Desktop Baseline) */}
       <main className="relative z-10 mx-auto max-w-[1360px] px-6 py-10 space-y-12">
         {/* ===================================================================
-            HERO & OFFICIAL MLSA KIIT CHAPTER HEADER
+            HERO & UNIVERSAL APPSEC ENGINE HEADER
            =================================================================== */}
         <section
           id="workspace"
           className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 pb-2"
         >
           <div className="flex items-start gap-5 max-w-3xl">
-            {!heroLogoError ? (
-              <div className="glass-panel hidden sm:flex h-16 w-16 items-center justify-center rounded-2xl p-2 shrink-0 mt-0.5">
-                <img
-                  src="/assets/aistudio/image_950b45df.png"
-                  alt="Microsoft Learn Student Ambassador Shield"
-                  referrerPolicy="no-referrer"
-                  onError={() => setHeroLogoError(true)}
-                  className="h-full w-full object-contain"
-                />
-              </div>
-            ) : null}
+            <div className="relative hidden sm:flex h-16 w-16 items-center justify-center rounded-full p-0.5 shrink-0 mt-0.5 ring-2 ring-cyan-500/40 shadow-[0_0_24px_rgba(6,182,212,0.35)] bg-[#070B14] overflow-hidden">
+              <img
+                src="/assets/aistudio/Code_Generated_Image_dcad87d9.png"
+                alt="Sentinel AppSec Security Crest"
+                className="h-full w-full object-cover rounded-full"
+              />
+            </div>
             <div className="space-y-2.5">
               <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#CBD5E1]">
                 <span className="text-[#38BDF8] font-semibold">
-                  MLSA KIIT CHAPTER
+                  APPLICATION SECURITY
                 </span>
                 <span className="text-white/30" aria-hidden="true">
                   /
                 </span>
-                <span>APPLICATION SECURITY VERIFICATION</span>
+                <span>EXPLOITABILITY & HARDENING VERIFICATION</span>
                 <span className="text-white/30" aria-hidden="true">
                   /
                 </span>
-                <span>ZERO-HALLUCINATION ENGINE</span>
+                <span>7 DETERMINISTIC ENGINES</span>
               </div>
               <BlurRevealHeading
-                text="Empirical Vulnerability & Security Posture Auditor"
+                text="Empirical Vulnerability, Exploit Proof & Hardening Auditor"
                 className="text-2xl sm:text-3xl lg:text-[36px] font-bold leading-[1.15]"
               />
               <p className="text-sm text-[#CBD5E1] leading-relaxed max-w-2xl">
-                Built for Microsoft Learn Student Ambassadors at KIIT. Every
-                finding is strictly deterministic—verified against live HTTP
-                headers, SPA-filtered route signatures, upstream OSV.dev CVE
-                records, or exact source code lines.
+                Universal web application security verification suite. Every
+                finding is backed by empirical proof—spanning HTTP/CORS/TLS
+                headers, SPA-filtered dotfiles, client JS bundle secret & hidden API
+                harvesting, JWT weak-secret cracking, GraphQL & Open-Redirect
+                probing, OSV.dev CVEs, and exact SAST lines.
               </p>
             </div>
           </div>
@@ -476,35 +588,54 @@ export default function App() {
         <section className="glass-workspace grid grid-cols-1 lg:grid-cols-12 rounded-2xl divide-y lg:divide-y-0 lg:divide-x divide-white/[0.10] overflow-hidden">
           {/* Left Panel: Target & Scope Controller (7 Cols) */}
           <div className="lg:col-span-7 p-6 sm:p-8 flex flex-col justify-between space-y-6">
-            <div className="space-y-6">
+            <div className="space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.09] pb-5">
                 <div>
                   <h2 className="font-display text-base font-semibold text-white">
                     Target Configuration
                   </h2>
                   <p className="text-xs text-[#CBD5E1] mt-0.5">
-                    Provide a deployed endpoint URL, a public GitHub repository,
-                    or source & manifest files.
+                    Provide a deployed URL, GitHub repository, JWT session
+                    token, or source & manifest files.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => executeAudit(config)}
-                  disabled={isRunning || !hasTargetInput}
-                  className="flex items-center gap-2 rounded-lg bg-[#0078D4] px-4 py-2 text-xs font-semibold text-white shadow-[0_8px_24px_-4px_rgba(0,120,212,0.55)] hover:bg-[#1084E0] disabled:bg-white/[0.08] disabled:text-white/35 disabled:shadow-none transition-all whitespace-nowrap shrink-0"
-                >
-                  {isRunning ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Verifying Target...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-3 w-3 fill-current" />
-                      <span>Run Security Audit</span>
-                    </>
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeReport && (
+                    <button
+                      type="button"
+                      onClick={() => executeAudit(config, activeReport)}
+                      disabled={isRunning || !hasTargetInput}
+                      className="glass-subpanel flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold text-[#38BDF8] hover:border-[#38BDF8]/50 hover:text-white disabled:opacity-40 transition-all whitespace-nowrap shrink-0"
+                      title="Re-run verification and compare resolved vs. remaining vulnerabilities"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${
+                          isRunning ? 'animate-spin' : ''
+                        }`}
+                      />
+                      <span>Re-Verify & Compare Delta</span>
+                    </button>
                   )}
-                </button>
+
+                  <button
+                    type="button"
+                    onClick={() => executeAudit(config, null)}
+                    disabled={isRunning || !hasTargetInput}
+                    className="flex items-center gap-2 rounded-lg bg-[#0078D4] px-4 py-2 text-xs font-semibold text-white shadow-[0_8px_24px_-4px_rgba(0,120,212,0.55)] hover:bg-[#1084E0] disabled:bg-white/[0.08] disabled:text-white/35 disabled:shadow-none transition-all whitespace-nowrap shrink-0"
+                  >
+                    {isRunning ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Verifying Target...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-3 w-3 fill-current" />
+                        <span>Run Security Audit</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Project Name & GitHub Repo Inputs */}
@@ -519,7 +650,7 @@ export default function App() {
                     onChange={(e) =>
                       setConfig({ ...config, projectName: e.target.value })
                     }
-                    placeholder="e.g., KIIT Chapter Portal"
+                    placeholder="e.g., Production API Gateway"
                     className="glass-input w-full rounded-lg px-3.5 py-2 text-sm text-white placeholder-[#64748B]"
                   />
                 </div>
@@ -539,29 +670,49 @@ export default function App() {
                           githubRepoUrl: e.target.value,
                         })
                       }
-                      placeholder="https://github.com/owner/repo"
+                      placeholder="https://github.com/tmvoid/repo"
                       className="glass-input w-full rounded-lg pl-9 pr-3.5 py-2 text-sm font-mono text-white placeholder-[#64748B]"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Live Target URL Input */}
-              <div>
-                <label className="block text-xs font-medium text-[#E2E8F0] mb-1.5">
-                  Deployed Application or API Endpoint URL
-                </label>
-                <div className="relative">
-                  <Globe className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-[#94A3B8]" />
-                  <input
-                    type="text"
-                    value={config.targetUrl}
-                    onChange={(e) =>
-                      setConfig({ ...config, targetUrl: e.target.value })
-                    }
-                    placeholder="https://your-project.vercel.app"
-                    className="glass-input w-full rounded-lg pl-9 pr-3.5 py-2 text-sm font-mono text-white placeholder-[#64748B]"
-                  />
+              {/* Live Target URL & Optional JWT Session Token Input */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-[#E2E8F0] mb-1.5">
+                    Deployed Application or API Endpoint URL
+                  </label>
+                  <div className="relative">
+                    <Globe className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-[#94A3B8]" />
+                    <input
+                      type="text"
+                      value={config.targetUrl}
+                      onChange={(e) =>
+                        setConfig({ ...config, targetUrl: e.target.value })
+                      }
+                      placeholder="https://your-project.vercel.app"
+                      className="glass-input w-full rounded-lg pl-9 pr-3.5 py-2 text-sm font-mono text-white placeholder-[#64748B]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#E2E8F0] mb-1.5">
+                    JWT / Bearer Token (Optional or Auto-Captured)
+                  </label>
+                  <div className="relative">
+                    <KeyRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-[#94A3B8]" />
+                    <input
+                      type="text"
+                      value={config.jwtToken || ''}
+                      onChange={(e) =>
+                        setConfig({ ...config, jwtToken: e.target.value })
+                      }
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                      className="glass-input w-full rounded-lg pl-9 pr-3.5 py-2 text-sm font-mono text-white placeholder-[#64748B]"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -634,10 +785,11 @@ export default function App() {
 
                 {/* Staged Files List */}
                 {config.uploadedFiles.length === 0 ? (
-                  <div className="glass-subpanel rounded-lg border-dashed px-4 py-3 text-xs text-[#94A3B8]">
+                  <div className="glass-subpanel rounded-lg border-dashed px-4 py-2.5 text-xs text-[#94A3B8]">
                     No local files staged. Upload a{' '}
                     <code className="text-[#E2E8F0]">package.json</code> or
-                    source files, or enter a URL / GitHub repository above.
+                    source files, or enter a URL / GitHub repository / JWT
+                    above.
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -702,32 +854,47 @@ export default function App() {
               </div>
             </div>
 
-            {/* 4 Audit Engine Toggles */}
+            {/* 7 Authentic Verification & Exploitability Engine Toggles */}
             <div className="pt-5 border-t border-white/[0.09]">
               <div className="text-xs font-medium text-[#CBD5E1] mb-2.5">
-                Verification Modules
+                Active Verification & Exploitability Engines (7 Modules)
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {[
                   {
                     key: 'httpHeaders' as const,
-                    label: 'HTTP Headers, CORS & TLS',
-                    desc: 'Live header capture & Origin reflection probe',
+                    label: '01. HTTP, CORS & Clickjacking',
+                    desc: 'Headers, Origin reflection & iframe PoC',
                   },
                   {
                     key: 'routeProbing' as const,
-                    label: 'Sensitive Route & Sourcemap Prober',
-                    desc: 'Baseline 404 SPA filter + signature check',
+                    label: '02. Dotfile & Map Prober',
+                    desc: 'SPA 404 filter + /.env & .js.map probe',
+                  },
+                  {
+                    key: 'jsBundleAudit' as const,
+                    label: '03. JS Bundle & API Harvester',
+                    desc: 'Extracts hidden /api/* routes & leaked keys',
+                  },
+                  {
+                    key: 'jwtAudit' as const,
+                    label: '04. JWT Weak-Secret Cracker',
+                    desc: 'Tests alg:none + HMAC secret dictionary',
+                  },
+                  {
+                    key: 'protocolProbing' as const,
+                    label: '05. GraphQL, Verbs & Redirects',
+                    desc: '__schema dump, TRACE & Open Redirects',
                   },
                   {
                     key: 'dependencyCve' as const,
-                    label: 'Dependency CVE Audit (OSV.dev)',
-                    desc: 'Upstream npm advisory verification',
+                    label: '06. OSV.dev Supply-Chain CVE',
+                    desc: 'Live upstream npm CVE/GHSA query',
                   },
                   {
                     key: 'sourceSast' as const,
-                    label: 'Source Code SAST & Secrets',
-                    desc: 'Exact file & line matching for keys & sinks',
+                    label: '07. Source Code SAST Engine',
+                    desc: 'Exact file & line sink/secret scanner',
                   },
                 ].map((mod) => {
                   const active = config.modules[mod.key];
@@ -744,22 +911,22 @@ export default function App() {
                           },
                         }))
                       }
-                      className={`glass-subpanel flex items-start justify-between gap-3 rounded-lg p-3 text-left transition-all ${
+                      className={`glass-subpanel flex items-start justify-between gap-2 rounded-lg p-2.5 text-left transition-all ${
                         active
                           ? 'border-white/[0.18] bg-white/[0.04]'
                           : 'opacity-50 hover:opacity-80'
                       }`}
                     >
-                      <div>
-                        <div className="text-xs font-semibold text-white">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-white truncate">
                           {mod.label}
                         </div>
-                        <div className="text-[11px] text-[#94A3B8] mt-0.5">
+                        <div className="text-[11px] text-[#94A3B8] mt-0.5 truncate">
                           {mod.desc}
                         </div>
                       </div>
                       <span
-                        className={`font-mono text-[11px] font-semibold shrink-0 ${
+                        className={`font-mono text-[10px] font-semibold shrink-0 ${
                           active ? 'text-[#38BDF8]' : 'text-[#64748B]'
                         }`}
                       >
@@ -796,8 +963,8 @@ export default function App() {
                 </button>
               </div>
             ) : activeReport ? (
-              <div className="space-y-6">
-                <div className="flex items-start justify-between gap-4 border-b border-white/[0.09] pb-5">
+              <div className="space-y-5">
+                <div className="flex items-start justify-between gap-4 border-b border-white/[0.09] pb-4">
                   <div>
                     <div className="flex items-center gap-2 text-xs font-mono text-[#38BDF8]">
                       <span>TELEMETRY SNAPSHOT</span>
@@ -829,65 +996,100 @@ export default function App() {
 
                 {/* Contiguous Severity Grid (Tabular Numerals) */}
                 <div className="glass-subpanel grid grid-cols-4 divide-x divide-white/[0.08] rounded-xl font-mono tabular-nums">
-                  <div className="p-3.5">
+                  <div className="p-3">
                     <div className="text-[11px] text-[#94A3B8]">Critical</div>
-                    <div className="text-2xl font-bold text-[#EF4444] mt-1">
+                    <div className="text-2xl font-bold text-[#EF4444] mt-0.5">
                       {severityCounts.critical}
                     </div>
                   </div>
-                  <div className="p-3.5">
+                  <div className="p-3">
                     <div className="text-[11px] text-[#94A3B8]">High</div>
-                    <div className="text-2xl font-bold text-[#F97316] mt-1">
+                    <div className="text-2xl font-bold text-[#F97316] mt-0.5">
                       {severityCounts.high}
                     </div>
                   </div>
-                  <div className="p-3.5">
+                  <div className="p-3">
                     <div className="text-[11px] text-[#94A3B8]">Medium</div>
-                    <div className="text-2xl font-bold text-[#F59E0B] mt-1">
+                    <div className="text-2xl font-bold text-[#F59E0B] mt-0.5">
                       {severityCounts.medium}
                     </div>
                   </div>
-                  <div className="p-3.5">
+                  <div className="p-3">
                     <div className="text-[11px] text-[#94A3B8]">Low</div>
-                    <div className="text-2xl font-bold text-[#38BDF8] mt-1">
+                    <div className="text-2xl font-bold text-[#38BDF8] mt-0.5">
                       {severityCounts.low}
                     </div>
                   </div>
                 </div>
 
-                {/* Module Telemetry Summary Rows */}
-                <div className="space-y-2.5 font-mono text-xs">
+                {/* 7-Engine Execution Ledger */}
+                <div className="space-y-2 font-mono text-xs">
                   <div className="text-xs font-sans font-medium text-[#CBD5E1]">
-                    Engine Execution Ledger
+                    7-Engine Verification Telemetry
                   </div>
                   <div className="glass-subpanel divide-y divide-white/[0.07] rounded-xl">
-                    <div className="flex items-center justify-between px-3.5 py-2.5">
+                    <div className="flex items-center justify-between px-3.5 py-2">
                       <span className="text-[#E2E8F0]">
-                        HTTP / CORS / TLS Response
+                        01. HTTP / CORS / Clickjacking
                       </span>
                       <span className="text-[#94A3B8] tabular-nums">
                         {activeReport.rawTelemetry.http
                           ? `HTTP ${activeReport.rawTelemetry.http.status} (${activeReport.rawTelemetry.http.responseTimeMs} ms)`
-                          : 'Not Requested'}
+                          : 'Skipped'}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between px-3.5 py-2.5">
+                    <div className="flex items-center justify-between px-3.5 py-2">
                       <span className="text-[#E2E8F0]">
-                        Sensitive Route & Map Probes
+                        02. Dotfile & Sourcemap Prober
                       </span>
                       <span className="text-[#94A3B8] tabular-nums">
                         {activeReport.rawTelemetry.probes
                           ? `${activeReport.rawTelemetry.probes.testedRoutes.length} probed · SPA Filter ${
                               activeReport.rawTelemetry.probes.isSpaCatchAll
-                                ? 'Active'
-                                : 'Standard'
+                                ? 'On'
+                                : 'Std'
                             }`
-                          : 'Not Requested'}
+                          : 'Skipped'}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between px-3.5 py-2.5">
+                    <div className="flex items-center justify-between px-3.5 py-2">
                       <span className="text-[#E2E8F0]">
-                        OSV.dev Dependency CVE Query
+                        03. JS Bundle & API Harvester
+                      </span>
+                      <span className="text-[#94A3B8] tabular-nums">
+                        {activeReport.rawTelemetry.bundles
+                          ? `${activeReport.rawTelemetry.bundles.scriptsAnalyzed} scripts · ${activeReport.rawTelemetry.bundles.discoveredEndpoints.length} routes`
+                          : 'Skipped'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between px-3.5 py-2">
+                      <span className="text-[#E2E8F0]">
+                        04. JWT Cryptographic Auditor
+                      </span>
+                      <span className="text-[#94A3B8] tabular-nums">
+                        {activeReport.rawTelemetry.jwt
+                          ? `${activeReport.rawTelemetry.jwt.tokensInspected} token(s) inspected`
+                          : '0 tokens'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between px-3.5 py-2">
+                      <span className="text-[#E2E8F0]">
+                        05. GraphQL, Verbs & Redirects
+                      </span>
+                      <span className="text-[#94A3B8] tabular-nums">
+                        {activeReport.rawTelemetry.protocol
+                          ? `${activeReport.rawTelemetry.protocol.allowedMethods.length} verbs · GQL ${
+                              activeReport.rawTelemetry.protocol
+                                .graphqlIntrospectionOpen
+                                ? 'OPEN'
+                                : 'Locked'
+                            }`
+                          : 'Skipped'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between px-3.5 py-2">
+                      <span className="text-[#E2E8F0]">
+                        06. OSV.dev Supply-Chain CVE
                       </span>
                       <span className="text-[#94A3B8] tabular-nums">
                         {activeReport.rawTelemetry.dependencies
@@ -895,9 +1097,9 @@ export default function App() {
                           : 'No package.json'}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between px-3.5 py-2.5">
+                    <div className="flex items-center justify-between px-3.5 py-2">
                       <span className="text-[#E2E8F0]">
-                        Deterministic Code SAST
+                        07. Deterministic Code SAST
                       </span>
                       <span className="text-[#94A3B8] tabular-nums">
                         {activeReport.rawTelemetry.sast
@@ -909,7 +1111,7 @@ export default function App() {
                 </div>
 
                 {/* Passed Checks vs Issues Footer */}
-                <div className="flex items-center justify-between pt-3 border-t border-white/[0.09] text-xs">
+                <div className="flex items-center justify-between pt-2 border-t border-white/[0.09] text-xs">
                   <div className="text-[#CBD5E1] font-mono tabular-nums">
                     Passed:{' '}
                     <span className="text-[#10B981] font-semibold">
@@ -920,13 +1122,22 @@ export default function App() {
                       {activeReport.findings.length}
                     </span>
                   </div>
-                  <button
-                    onClick={() => setIsExportModalOpen(true)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-[#38BDF8] hover:underline whitespace-nowrap shrink-0"
-                  >
-                    <span>Export Certificate / PDF</span>
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setActiveLedgerTab('hardening')}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-[#10B981] hover:underline whitespace-nowrap shrink-0"
+                    >
+                      <Wrench className="h-3.5 w-3.5" />
+                      <span>Hardening Configs</span>
+                    </button>
+                    <button
+                      onClick={() => setIsExportModalOpen(true)}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-[#38BDF8] hover:underline whitespace-nowrap shrink-0"
+                    >
+                      <span>Export PDF</span>
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -950,37 +1161,51 @@ export default function App() {
                   <div className="glass-subpanel rounded-xl p-6 space-y-2">
                     <div className="inline-flex items-center gap-2 text-xs font-mono font-semibold text-[#38BDF8]">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>EXECUTING VERIFICATION PIPELINE...</span>
+                      <span>EXECUTING 7-ENGINE VERIFICATION PIPELINE...</span>
                     </div>
                     <p className="text-xs text-[#CBD5E1]">
-                      Inspecting HTTP response headers, testing untrusted CORS
-                      origins, probing routes with SPA filtering, and querying
-                      OSV.dev.
+                      Inspecting HTTP/CORS/TLS, probing SPA-filtered dotfiles,
+                      harvesting JS bundles & hidden APIs, auditing JWT secrets,
+                      probing GraphQL & redirects, and querying OSV.dev.
                     </p>
                   </div>
                 ) : (
                   <div className="glass-subpanel divide-y divide-white/[0.07] rounded-xl font-mono text-xs">
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <span className="text-[#E2E8F0]">01. HTTP & TLS</span>
+                    <div className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-[#E2E8F0]">
+                        01. HTTP, CORS & Clickjacking PoC
+                      </span>
                       <span className="text-[#38BDF8]">Ready</span>
                     </div>
-                    <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center justify-between px-4 py-2.5">
                       <span className="text-[#E2E8F0]">
-                        02. Route & Map Prober
+                        02. Route & Sourcemap Prober
                       </span>
                       <span className="text-[#38BDF8]">SPA Filter Armed</span>
                     </div>
-                    <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center justify-between px-4 py-2.5">
                       <span className="text-[#E2E8F0]">
-                        03. OSV.dev Advisory Engine
+                        03. JS Bundle & Hidden API Harvester
+                      </span>
+                      <span className="text-[#38BDF8]">Ready</span>
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-[#E2E8F0]">
+                        04. JWT Cryptographic Cracker
+                      </span>
+                      <span className="text-[#38BDF8]">HMAC-SHA256 Armed</span>
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-[#E2E8F0]">
+                        05. GraphQL, Verbs & Open Redirect
+                      </span>
+                      <span className="text-[#38BDF8]">Ready</span>
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-[#E2E8F0]">
+                        06. OSV.dev + 07. Source SAST
                       </span>
                       <span className="text-[#38BDF8]">Connected</span>
-                    </div>
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <span className="text-[#E2E8F0]">
-                        04. Deterministic SAST
-                      </span>
-                      <span className="text-[#38BDF8]">11 Signatures</span>
                     </div>
                   </div>
                 )}
@@ -994,12 +1219,113 @@ export default function App() {
         </section>
 
         {/* ===================================================================
+            BEFORE-AND-AFTER REMEDIATION DELTA RE-VERIFIER BANNER
+           =================================================================== */}
+        {remediationDelta && (
+          <section className="glass-panel rounded-2xl border border-[#38BDF8]/40 p-6 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-xs font-mono text-[#38BDF8]">
+                  <GitCompare className="h-4 w-4" />
+                  <span>BEFORE & AFTER REMEDIATION VERIFICATION DELTA</span>
+                </div>
+                <h3 className="font-display text-base font-bold text-white">
+                  Remediation Re-Verification Comparison Complete
+                </h3>
+                <p className="text-xs text-[#CBD5E1]">
+                  Comparing baseline snapshot{' '}
+                  <span className="text-white font-medium">
+                    {remediationDelta.baselineProjectName}
+                  </span>{' '}
+                  (
+                  {new Date(
+                    remediationDelta.baselineTimestamp
+                  ).toLocaleTimeString()}
+                  ) against active verification run.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRemediationDelta(null)}
+                className="glass-subpanel rounded-md p-1.5 text-[#94A3B8] hover:text-white"
+                aria-label="Close remediation delta"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="glass-subpanel grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.08] rounded-xl font-mono tabular-nums">
+              <div className="p-3.5">
+                <div className="text-[11px] text-[#94A3B8]">
+                  Resolved Vulnerabilities
+                </div>
+                <div className="text-2xl font-bold text-[#10B981] mt-1">
+                  -{remediationDelta.resolvedFindings.length}
+                </div>
+              </div>
+              <div className="p-3.5">
+                <div className="text-[11px] text-[#94A3B8]">
+                  Remaining Issues
+                </div>
+                <div className="text-2xl font-bold text-[#F59E0B] mt-1">
+                  {remediationDelta.remainingFindings.length}
+                </div>
+              </div>
+              <div className="p-3.5">
+                <div className="text-[11px] text-[#94A3B8]">
+                  Newly Introduced
+                </div>
+                <div className="text-2xl font-bold text-[#EF4444] mt-1">
+                  +{remediationDelta.newFindings.length}
+                </div>
+              </div>
+              <div className="p-3.5">
+                <div className="text-[11px] text-[#94A3B8]">
+                  Passed Controls Delta
+                </div>
+                <div className="text-2xl font-bold text-[#38BDF8] mt-1">
+                  {remediationDelta.passedDelta >= 0
+                    ? `+${remediationDelta.passedDelta}`
+                    : remediationDelta.passedDelta}
+                </div>
+              </div>
+            </div>
+
+            {remediationDelta.resolvedFindings.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-[#10B981]">
+                  Verified Fixed & Eliminated Vulnerabilities:
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {remediationDelta.resolvedFindings.map((rf) => (
+                    <div
+                      key={rf.id}
+                      className="glass-subpanel flex items-center justify-between gap-2 rounded-lg px-3.5 py-2 text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <CheckCircle2 className="h-4 w-4 text-[#10B981] shrink-0" />
+                        <span className="text-white font-medium truncate">
+                          {rf.title}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[11px] text-[#10B981] shrink-0">
+                        FIXED ({rf.cwe})
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ===================================================================
             INTERACTIVE VERIFICATION LEDGER (GLASSMORPHIC)
            =================================================================== */}
         <section id="verification-ledger" className="space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             {/* Primary View Tabs (Functional Segmented Control) */}
-            <div className="glass-panel flex items-center gap-1 rounded-xl p-1 self-start">
+            <div className="glass-panel flex flex-wrap items-center gap-1 rounded-xl p-1 self-start">
               <button
                 onClick={() => setActiveLedgerTab('findings')}
                 className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 tabular-nums ${
@@ -1021,6 +1347,17 @@ export default function App() {
                 Passed Controls ({activeReport?.passedChecks.length ?? 0})
               </button>
               <button
+                onClick={() => setActiveLedgerTab('hardening')}
+                className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                  activeLedgerTab === 'hardening'
+                    ? 'bg-[#0078D4] text-white'
+                    : 'text-[#CBD5E1] hover:text-white'
+                }`}
+              >
+                <Wrench className="h-3.5 w-3.5" />
+                <span>Hardening Config Studio</span>
+              </button>
+              <button
                 onClick={() => setActiveLedgerTab('telemetry')}
                 className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   activeLedgerTab === 'telemetry'
@@ -1028,17 +1365,20 @@ export default function App() {
                     : 'text-[#CBD5E1] hover:text-white'
                 }`}
               >
-                Raw Telemetry & Headers
+                Raw Telemetry & Surface Map
               </button>
             </div>
 
             {/* Search & Interactive Filters */}
-            {activeReport && activeLedgerTab !== 'telemetry' && (
-              <div className="flex flex-wrap items-center gap-2">
-                {activeLedgerTab === 'findings' && (
-                  <div className="glass-panel flex items-center gap-1 rounded-lg p-1">
-                    {(['all', 'critical', 'high', 'medium', 'low'] as const).map(
-                      (sev) => (
+            {activeReport &&
+              activeLedgerTab !== 'telemetry' &&
+              activeLedgerTab !== 'hardening' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeLedgerTab === 'findings' && (
+                    <div className="glass-panel flex items-center gap-1 rounded-lg p-1">
+                      {(
+                        ['all', 'critical', 'high', 'medium', 'low'] as const
+                      ).map((sev) => (
                         <button
                           key={sev}
                           onClick={() => setSeverityFilter(sev)}
@@ -1050,49 +1390,63 @@ export default function App() {
                         >
                           {sev}
                         </button>
-                      )
-                    )}
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="glass-panel flex flex-wrap items-center gap-1 rounded-lg p-1">
+                    {(
+                      [
+                        'all',
+                        'http',
+                        'exposure',
+                        'bundle',
+                        'jwt',
+                        'protocol',
+                        'dependencies',
+                        'sast',
+                      ] as const
+                    ).map((mod) => (
+                      <button
+                        key={mod}
+                        onClick={() => setModuleFilter(mod)}
+                        className={`rounded px-2 py-1 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                          moduleFilter === mod
+                            ? 'bg-white/[0.15] text-white'
+                            : 'text-[#CBD5E1] hover:text-white'
+                        }`}
+                      >
+                        {mod === 'all'
+                          ? 'All'
+                          : mod === 'http'
+                          ? 'HTTP'
+                          : mod === 'exposure'
+                          ? 'Probes'
+                          : mod === 'bundle'
+                          ? 'JS Bundle'
+                          : mod === 'jwt'
+                          ? 'JWT'
+                          : mod === 'protocol'
+                          ? 'GraphQL/Verbs'
+                          : mod === 'dependencies'
+                          ? 'OSV CVE'
+                          : 'SAST'}
+                      </button>
+                    ))}
                   </div>
-                )}
 
-                <div className="glass-panel flex items-center gap-1 rounded-lg p-1">
-                  {(
-                    ['all', 'http', 'exposure', 'dependencies', 'sast'] as const
-                  ).map((mod) => (
-                    <button
-                      key={mod}
-                      onClick={() => setModuleFilter(mod)}
-                      className={`rounded px-2.5 py-1 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-                        moduleFilter === mod
-                          ? 'bg-white/[0.15] text-white'
-                          : 'text-[#CBD5E1] hover:text-white'
-                      }`}
-                    >
-                      {mod === 'all'
-                        ? 'All Engines'
-                        : mod === 'http'
-                        ? 'HTTP'
-                        : mod === 'exposure'
-                        ? 'Probes'
-                        : mod === 'dependencies'
-                        ? 'OSV CVE'
-                        : 'SAST'}
-                    </button>
-                  ))}
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-2 h-3.5 w-3.5 text-[#94A3B8]" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Filter by CWE, file, header..."
+                      className="glass-input w-48 sm:w-56 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-[#64748B]"
+                    />
+                  </div>
                 </div>
-
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-2 h-3.5 w-3.5 text-[#94A3B8]" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Filter by CWE, file, header..."
-                    className="glass-input w-48 sm:w-56 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-[#64748B]"
-                  />
-                </div>
-              </div>
-            )}
+              )}
           </div>
 
           {/* ZERO-STATE WHEN NO AUDIT HAS BEEN RUN YET */}
@@ -1105,9 +1459,13 @@ export default function App() {
                 No Audit Executed Yet
               </h3>
               <p className="text-xs text-[#CBD5E1] max-w-md mx-auto leading-relaxed">
-                Enter a live URL, GitHub repository, or source files above and
-                click <span className="text-white font-medium">Run Security Audit</span> to
-                populate empirical findings and passed security controls.
+                Enter a live URL, GitHub repository, JWT token, or source files
+                above and click{' '}
+                <span className="text-white font-medium">
+                  Run Security Audit
+                </span>{' '}
+                to populate empirical findings, exploitability proofs, and
+                auto-generated hardening configs.
               </p>
             </div>
           ) : (
@@ -1135,7 +1493,7 @@ export default function App() {
                         </h3>
                         <p className="text-xs text-[#CBD5E1] max-w-md">
                           {activeReport && activeReport.findings.length === 0
-                            ? 'All enabled security checks passed verification. MLSA KIIT Sentinel never generates synthetic or bogus findings.'
+                            ? 'All enabled security checks passed verification. Sentinel AppSec never generates synthetic or bogus findings.'
                             : 'Clear the active filter criteria to view all verified findings.'}
                         </p>
                       </div>
@@ -1191,6 +1549,20 @@ export default function App() {
                               <span className="text-[#38BDF8]">
                                 {MODULE_NAMES[finding.module]}
                               </span>
+                              {finding.exploitProof && (
+                                <>
+                                  <span
+                                    className="text-white/25"
+                                    aria-hidden="true"
+                                  >
+                                    ·
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 text-[#EF4444] font-semibold">
+                                    <Flame className="h-3 w-3" />
+                                    <span>Interactive Exploit PoC</span>
+                                  </span>
+                                </>
+                              )}
                             </div>
 
                             <div className="font-display text-sm font-semibold text-white group-hover:text-[#38BDF8] transition-colors">
@@ -1212,7 +1584,11 @@ export default function App() {
                               </div>
                             </div>
                             <div className="flex items-center gap-1 text-xs font-medium text-[#38BDF8] whitespace-nowrap shrink-0">
-                              <span>Inspect Proof</span>
+                              <span>
+                                {finding.exploitProof
+                                  ? 'Launch PoC & Fix'
+                                  : 'Inspect Proof'}
+                              </span>
                               <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                             </div>
                           </div>
@@ -1275,10 +1651,15 @@ export default function App() {
                 </div>
               )}
 
-              {/* TAB 3: RAW TELEMETRY, HEADERS, ROUTE PROBES & OSV MATRIX */}
+              {/* TAB 3: AUTO-GENERATED HARDENING CONFIG STUDIO */}
+              {activeLedgerTab === 'hardening' && activeReport && (
+                <HardeningStudio report={activeReport} />
+              )}
+
+              {/* TAB 4: RAW TELEMETRY, SURFACE MAP, JWT & OSV MATRIX */}
               {activeLedgerTab === 'telemetry' && activeReport && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Raw HTTP Response Headers */}
+                  {/* 1. Raw HTTP Response Headers */}
                   <SpotlightCard className="p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <h3 className="font-display text-sm font-semibold text-white">
@@ -1308,7 +1689,7 @@ export default function App() {
                     )}
                   </SpotlightCard>
 
-                  {/* Sensitive Route Prober Matrix */}
+                  {/* 2. Sensitive Route Prober Matrix */}
                   <SpotlightCard className="p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <h3 className="font-display text-sm font-semibold text-white">
@@ -1322,7 +1703,7 @@ export default function App() {
                       )}
                     </div>
                     {activeReport.rawTelemetry.probes ? (
-                      <div className="glass-subpanel divide-y divide-white/[0.06] rounded-lg font-mono text-xs">
+                      <div className="glass-subpanel divide-y divide-white/[0.06] rounded-lg font-mono text-xs max-h-72 overflow-y-auto">
                         {activeReport.rawTelemetry.probes.testedRoutes.map(
                           (rt) => (
                             <div
@@ -1360,7 +1741,164 @@ export default function App() {
                     )}
                   </SpotlightCard>
 
-                  {/* OSV.dev Dependency Scan Table */}
+                  {/* 3. Discovered Client JS Bundles & Hidden API Surface Map */}
+                  <SpotlightCard className="p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-display text-sm font-semibold text-white">
+                        Discovered API Surface Map & JS Bundles
+                      </h3>
+                      {activeReport.rawTelemetry.bundles && (
+                        <span className="font-mono text-xs text-[#38BDF8] tabular-nums">
+                          {
+                            activeReport.rawTelemetry.bundles
+                              .discoveredEndpoints.length
+                          }{' '}
+                          routes ·{' '}
+                          {activeReport.rawTelemetry.bundles.scriptsAnalyzed}{' '}
+                          bundles ({activeReport.rawTelemetry.bundles.totalBytes}{' '}
+                          B)
+                        </span>
+                      )}
+                    </div>
+                    {activeReport.rawTelemetry.bundles ? (
+                      <div className="space-y-3 font-mono text-xs">
+                        {activeReport.rawTelemetry.bundles.discoveredEndpoints
+                          .length > 0 ? (
+                          <div className="glass-subpanel rounded-lg p-3 space-y-1.5">
+                            <div className="text-[11px] text-[#94A3B8]">
+                              Extracted Backend / Internal API Routes:
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {activeReport.rawTelemetry.bundles.discoveredEndpoints.map(
+                                (ep) => (
+                                  <span
+                                    key={ep}
+                                    className="rounded bg-black/50 px-2 py-0.5 text-[#38BDF8] border border-white/[0.08]"
+                                  >
+                                    {ep}
+                                  </span>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-[#CBD5E1]">
+                            No hidden /api/* or /admin/* routes extracted from
+                            client scripts.
+                          </div>
+                        )}
+
+                        {activeReport.rawTelemetry.bundles.bundleNames.length >
+                          0 && (
+                          <div className="glass-subpanel divide-y divide-white/[0.06] rounded-lg max-h-48 overflow-y-auto">
+                            {activeReport.rawTelemetry.bundles.bundleNames.map(
+                              (bundleUrl) => (
+                                <div
+                                  key={bundleUrl}
+                                  className="flex items-center justify-between px-3 py-2"
+                                >
+                                  <span className="text-[#E2E8F0] truncate max-w-md">
+                                    {bundleUrl}
+                                  </span>
+                                  <span className="text-[#10B981] shrink-0">
+                                    Inspected
+                                  </span>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-[#CBD5E1]">
+                        JS Bundle harvesting was not executed in this run.
+                      </p>
+                    )}
+                  </SpotlightCard>
+
+                  {/* 4. JWT Cryptographic Audit & GraphQL / Verb Telemetry */}
+                  <SpotlightCard className="p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-display text-sm font-semibold text-white">
+                        JWT Cryptographic & Protocol Probe Telemetry
+                      </h3>
+                      {activeReport.rawTelemetry.jwt && (
+                        <span className="font-mono text-xs text-[#38BDF8] tabular-nums">
+                          {activeReport.rawTelemetry.jwt.tokensInspected} JWT(s)
+                          analyzed
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-3 font-mono text-xs">
+                      {activeReport.rawTelemetry.jwt &&
+                      activeReport.rawTelemetry.jwt.decodedTokens.length > 0 ? (
+                        activeReport.rawTelemetry.jwt.decodedTokens.map(
+                          (tok, idx) => (
+                            <div
+                              key={idx}
+                              className="glass-subpanel rounded-lg p-3 space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-white font-semibold">
+                                  Source: {tok.source} (alg:{' '}
+                                  {String(tok.header.alg ?? 'unknown')})
+                                </span>
+                                <span
+                                  className={
+                                    tok.weakSecretMatched
+                                      ? 'text-[#EF4444] font-bold'
+                                      : 'text-[#10B981]'
+                                  }
+                                >
+                                  {tok.weakSecretMatched
+                                    ? `CRACKED ("${tok.weakSecretMatched}")`
+                                    : 'Secret Uncracked'}
+                                </span>
+                              </div>
+                              <pre className="overflow-x-auto rounded bg-black/40 p-2 text-[11px] text-[#CBD5E1]">
+                                <code>
+                                  {JSON.stringify(tok.payload, null, 2)}
+                                </code>
+                              </pre>
+                            </div>
+                          )
+                        )
+                      ) : (
+                        <div className="glass-subpanel rounded-lg p-3 text-[#94A3B8]">
+                          No JWT tokens captured from Set-Cookie or manual input.
+                        </div>
+                      )}
+
+                      {activeReport.rawTelemetry.protocol && (
+                        <div className="glass-subpanel rounded-lg p-3 space-y-1">
+                          <div className="text-[#E2E8F0]">
+                            Allowed HTTP Verbs:{' '}
+                            <span className="text-[#38BDF8]">
+                              {activeReport.rawTelemetry.protocol.allowedMethods.join(
+                                ', '
+                              ) || 'Standard'}
+                            </span>
+                          </div>
+                          <div className="text-[#CBD5E1]">
+                            HTTP TRACE Enabled:{' '}
+                            <span
+                              className={
+                                activeReport.rawTelemetry.protocol.traceEnabled
+                                  ? 'text-[#EF4444]'
+                                  : 'text-[#10B981]'
+                              }
+                            >
+                              {activeReport.rawTelemetry.protocol.traceEnabled
+                                ? 'YES (Vulnerable)'
+                                : 'No (Blocked)'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </SpotlightCard>
+
+                  {/* 5. OSV.dev Dependency Scan Table */}
                   <SpotlightCard className="p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <h3 className="font-display text-sm font-semibold text-white">
@@ -1406,7 +1944,7 @@ export default function App() {
                     )}
                   </SpotlightCard>
 
-                  {/* Scanned Source Files Manifest */}
+                  {/* 6. Scanned Source Files Manifest */}
                   <SpotlightCard className="p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <h3 className="font-display text-sm font-semibold text-white">
@@ -1455,16 +1993,17 @@ export default function App() {
         </section>
 
         {/* ===================================================================
-            RECENT CHAPTER AUDITS (GLASSMORPHIC CARDS)
+            RECENT CHAPTER AUDITS WITH DELTA COMPARISON (GLASSMORPHIC CARDS)
            =================================================================== */}
         <section id="recent-audits" className="space-y-4 pt-4">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-display text-base font-semibold text-white">
-                Executed Audit History
+                Executed Audit History & Delta Comparison
               </h2>
               <p className="text-xs text-[#CBD5E1]">
-                Snapshots of verification runs executed in this browser session.
+                Select any historical run or compare a baseline run against your
+                active report to verify vulnerability remediation.
               </p>
             </div>
             {auditHistory.length > 0 && (
@@ -1492,7 +2031,7 @@ export default function App() {
                   <SpotlightCard
                     key={item.id}
                     onClick={() => setActiveReport(item)}
-                    className={`p-4 ${
+                    className={`p-4 space-y-2 ${
                       isCurrent ? 'border-[#38BDF8]/60 bg-[#0F1B33]/70' : ''
                     }`}
                   >
@@ -1506,25 +2045,43 @@ export default function App() {
                       </span>
                       <span className="tabular-nums">{item.durationMs} ms</span>
                     </div>
-                    <div className="font-display text-sm font-semibold text-white mt-1.5 truncate">
+                    <div className="font-display text-sm font-semibold text-white truncate">
                       {item.projectName}
                     </div>
-                    <div className="flex items-center gap-2 text-xs font-mono mt-2 tabular-nums">
-                      <span
-                        className={
-                          item.findings.length === 0
-                            ? 'text-[#10B981]'
-                            : 'text-[#EF4444]'
-                        }
-                      >
-                        {item.findings.length} Findings
-                      </span>
-                      <span className="text-white/25" aria-hidden="true">
-                        ·
-                      </span>
-                      <span className="text-[#10B981]">
-                        {item.passedChecks.length} Passed
-                      </span>
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="flex items-center gap-2 text-xs font-mono tabular-nums">
+                        <span
+                          className={
+                            item.findings.length === 0
+                              ? 'text-[#10B981]'
+                              : 'text-[#EF4444]'
+                          }
+                        >
+                          {item.findings.length} Findings
+                        </span>
+                        <span className="text-white/25" aria-hidden="true">
+                          ·
+                        </span>
+                        <span className="text-[#10B981]">
+                          {item.passedChecks.length} Passed
+                        </span>
+                      </div>
+
+                      {activeReport && !isCurrent && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRemediationDelta(
+                              computeRemediationDelta(item, activeReport)
+                            );
+                          }}
+                          className="glass-subpanel flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-mono text-[#38BDF8] hover:text-white"
+                        >
+                          <GitCompare className="h-3 w-3" />
+                          <span>Diff vs Active</span>
+                        </button>
+                      )}
                     </div>
                   </SpotlightCard>
                 );
@@ -1534,7 +2091,7 @@ export default function App() {
         </section>
 
         {/* ===================================================================
-            AUTHENTIC ZERO-HALLUCINATION METHODOLOGY SECTION (GLASSMORPHIC)
+            AUTHENTIC 7-ENGINE ZERO-HALLUCINATION METHODOLOGY SECTION
            =================================================================== */}
         <section
           id="methodology"
@@ -1542,73 +2099,75 @@ export default function App() {
         >
           <div className="max-w-2xl space-y-1">
             <h2 className="font-display text-base font-semibold text-white">
-              Zero-Hallucination Verification Architecture
+              7-Engine Zero-Hallucination Verification & Exploitability
+              Architecture
             </h2>
             <p className="text-xs text-[#CBD5E1] leading-relaxed">
-              Every module relies on live protocol inspection and upstream
-              cryptographic advisory databases rather than speculative AI
-              guessing.
+              Every module relies on live protocol inspection, cryptographic
+              verification, and upstream CVE advisory databases rather than
+              speculative AI guessing.
             </p>
           </div>
 
           <div className="glass-workspace grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.09] rounded-2xl overflow-hidden">
             <div className="p-5 space-y-2">
               <div className="flex items-center justify-between text-xs font-mono text-[#94A3B8]">
-                <span>ENGINE 01</span>
+                <span>ENGINES 01 & 02</span>
                 <Globe className="h-4 w-4 text-[#38BDF8]" />
               </div>
               <h3 className="font-display text-sm font-semibold text-white">
-                Live HTTP & CORS Probe
+                HTTP, CORS, Clickjacking & SPA Route Probing
               </h3>
               <p className="text-xs text-[#CBD5E1] leading-relaxed">
-                Captures unedited HTTP headers, tests active CORS origin
-                reflection with an untrusted origin header, and verifies
-                HttpOnly/Secure/SameSite cookie flags and SRI hashes.
+                Captures live headers, tests untrusted Origin reflection, builds
+                a live Clickjacking iframe PoC when framing locks are missing,
+                and filters SPA catch-all 404s before flagging /.env or
+                .js.map.
               </p>
             </div>
 
             <div className="p-5 space-y-2">
               <div className="flex items-center justify-between text-xs font-mono text-[#94A3B8]">
-                <span>ENGINE 02</span>
-                <CheckCircle2 className="h-4 w-4 text-[#10B981]" />
+                <span>ENGINES 03 & 04</span>
+                <KeyRound className="h-4 w-4 text-[#10B981]" />
               </div>
               <h3 className="font-display text-sm font-semibold text-white">
-                SPA Catch-All Filtering
+                JS Bundle Harvester & JWT Secret Cracker
               </h3>
               <p className="text-xs text-[#CBD5E1] leading-relaxed">
-                Establishes a baseline 404 fingerprint first so React/Vite SPA
-                routers returning index.html on /.env or /.git/config are never
-                falsely flagged as exposed files.
+                Fetches live client JavaScript bundles to extract leaked secrets
+                and hidden /api/* or /admin/* routes, and tests JWT tokens
+                against HMAC-SHA256 weak secrets to forge an Admin PoC token.
               </p>
             </div>
 
             <div className="p-5 space-y-2">
               <div className="flex items-center justify-between text-xs font-mono text-[#94A3B8]">
-                <span>ENGINE 03</span>
-                <PackageCheck className="h-4 w-4 text-[#38BDF8]" />
+                <span>ENGINES 05 & 06</span>
+                <Network className="h-4 w-4 text-[#38BDF8]" />
               </div>
               <h3 className="font-display text-sm font-semibold text-white">
-                Live OSV.dev CVE Queries
+                GraphQL, Verb Tampering, Redirects & OSV.dev
               </h3>
               <p className="text-xs text-[#CBD5E1] leading-relaxed">
-                Queries the official Open Source Vulnerabilities (api.osv.dev)
-                database against exact package.json semver versions and hydrates
-                upstream CVE & GHSA advisories.
+                Probes unauthenticated GraphQL __schema introspection, HTTP
+                OPTIONS/TRACE verb tampering, unvalidated Open Redirects, and
+                queries api.osv.dev for live npm CVE/GHSA advisories.
               </p>
             </div>
 
             <div className="p-5 space-y-2">
               <div className="flex items-center justify-between text-xs font-mono text-[#94A3B8]">
-                <span>ENGINE 04</span>
-                <Code2 className="h-4 w-4 text-[#38BDF8]" />
+                <span>ENGINE 07 + STUDIO</span>
+                <FileCode2 className="h-4 w-4 text-[#38BDF8]" />
               </div>
               <h3 className="font-display text-sm font-semibold text-white">
-                Exact Line-Number SAST
+                Line-Number SAST & Auto-Hardening Studio
               </h3>
               <p className="text-xs text-[#CBD5E1] leading-relaxed">
-                Scans uploaded or GitHub repository files line-by-line for
-                leaked cloud keys, SQL string interpolation, unsanitized DOM
-                sinks, and wildcard postMessage calls.
+                Scans source files line-by-line for dangerous sinks and
+                auto-synthesizes drop-in hardening configs for Vercel, Next.js,
+                Express, and Nginx with Before-vs-After delta re-verification.
               </p>
             </div>
           </div>
@@ -1616,12 +2175,25 @@ export default function App() {
       </main>
 
       {/* Quiet Glassmorphic Footer */}
-      <footer className="relative z-10 mt-12 border-t border-white/[0.09] bg-[#04070E]/70 backdrop-blur-xl px-6 py-6">
+      <footer
+        className={`relative z-10 mt-12 border-t backdrop-blur-xl px-6 py-6 transition-colors duration-300 ${
+          isBright
+            ? 'border-slate-900/10 bg-white/70'
+            : 'border-white/[0.09] bg-[#04070E]/70'
+        }`}
+      >
         <div className="mx-auto flex max-w-[1360px] flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#94A3B8]">
           <div className="flex items-center gap-2.5">
-            <span className="text-white font-medium">MLSA KIIT Sentinel</span>
+            <div className="h-5 w-5 rounded-full overflow-hidden ring-1 ring-cyan-500/30 shrink-0 bg-[#070B14]">
+              <img
+                src="/assets/aistudio/Code_Generated_Image_dcad87d9.png"
+                alt="Sentinel AppSec Logo"
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <span className="text-white font-medium">Sentinel AppSec</span>
             <span aria-hidden="true">·</span>
-            <span>Microsoft Learn Student Ambassadors at KIIT</span>
+            <span>Universal Application Security & Verification Platform</span>
           </div>
           <div className="flex items-center gap-5">
             <a
@@ -1639,15 +2211,36 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* Standalone Ultra-Subtle Signature Row */}
+        <div className="mx-auto mt-3 flex max-w-[1360px] justify-end items-center gap-1.5 font-mono text-[10px] tracking-tight text-[#64748B]/60">
+          <a
+            href="https://www.linkedin.com/in/tanmaysbhardwaj/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-[#94A3B8] transition-colors"
+          >
+            tanmay bhardwaj
+          </a>
+          <span aria-hidden="true" className="select-none opacity-60">·</span>
+          <a
+            href="https://github.com/tmvoid"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-[#94A3B8] transition-colors"
+          >
+            github.com/tmvoid
+          </a>
+        </div>
       </footer>
 
-      {/* Slide-Over Exact Evidence & Copyable Remediation Drawer */}
+      {/* Slide-Over Exact Evidence, Interactive Exploit PoC & Remediation Drawer */}
       <EvidenceDrawer
         finding={selectedFinding}
         onClose={() => setSelectedFinding(null)}
       />
 
-      {/* Official MLSA KIIT Security Audit Report Export Modal */}
+      {/* Official Security Audit Report Export Modal */}
       <ReportExportModal
         report={activeReport}
         isOpen={isExportModalOpen}

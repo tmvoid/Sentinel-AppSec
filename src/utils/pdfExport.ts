@@ -1,43 +1,6 @@
 import { jsPDF } from 'jspdf';
 import type { AuditReport } from '../types/audit.ts';
 
-interface LoadedLogo {
-  dataUrl: string;
-  width: number;
-  height: number;
-}
-
-async function loadImageWithDimensions(src: string): Promise<LoadedLogo | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      try {
-        const w = img.naturalWidth || 160;
-        const h = img.naturalHeight || 160;
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(null);
-          return;
-        }
-        ctx.drawImage(img, 0, 0);
-        resolve({
-          dataUrl: canvas.toDataURL('image/png'),
-          width: w,
-          height: h,
-        });
-      } catch {
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
-}
-
 /**
  * Sanitizes text for standard PDF PostScript fonts (Helvetica/Courier)
  * and inserts soft wrap opportunities inside ultra-long unbroken tokens/URLs
@@ -75,11 +38,30 @@ function wrapTextExact(
   return doc.splitTextToSize(cleaned, maxWidth) as string[];
 }
 
+function loadLogoImage(): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    try {
+      if (typeof window === 'undefined' || typeof Image === 'undefined') {
+        resolve(null);
+        return;
+      }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = '/assets/aistudio/Code_Generated_Image_dcad87d9.png';
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 /**
  * Generates and downloads a multi-page vector PDF security audit certificate
- * with strict 48pt (17mm) print margins on all sides.
+ * with strict 48pt (17mm) print margins on all sides and a subtle vector security watermark.
  */
 export async function exportAuditReportToPdf(report: AuditReport): Promise<void> {
+  const logoImg = await loadLogoImage();
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'pt',
@@ -95,6 +77,36 @@ export async function exportAuditReportToPdf(report: AuditReport): Promise<void>
   const CONTENT_WIDTH = pageWidth - MARGIN_X * 2; // 499.28pt
   const CARD_PAD = 14;
   const INNER_TEXT_WIDTH = CONTENT_WIDTH - CARD_PAD * 2; // 471.28pt
+
+  const stampSentinelWatermark = () => {
+    try {
+      const cx = pageWidth / 2;
+      const cy = pageHeight / 2 + 15;
+      // High-precision vector geometric security shield watermark
+      doc.setDrawColor(234, 240, 248);
+      doc.setLineWidth(1.5);
+      const w = 210;
+      const h = 260;
+      // Outer subtle shield boundary
+      doc.lines(
+        [
+          [w / 2, -28],
+          [w / 2, 28],
+          [0, h * 0.46],
+          [-w / 2, h * 0.54],
+          [-w / 2, -h * 0.54],
+          [0, -h * 0.46],
+        ],
+        cx - w / 2,
+        cy - h / 2,
+        [1, 1],
+        'D',
+        true
+      );
+    } catch {
+      // ignore
+    }
+  };
 
   let y = MARGIN_TOP;
 
@@ -118,41 +130,66 @@ export async function exportAuditReportToPdf(report: AuditReport): Promise<void>
   doc.setFillColor(0, 120, 212);
   doc.rect(MARGIN_X + 2, y + headerHeight - 3, CONTENT_WIDTH - 4, 3, 'F');
 
-  const logo = await loadImageWithDimensions('/assets/aistudio/image_950b45df.png');
-  let headerTextX = MARGIN_X + 18;
-  if (logo) {
+  // Geometric Sentinel Crest Badge
+  const badgeSize = 52;
+  const badgeX = MARGIN_X + 16;
+  const badgeY = y + (headerHeight - badgeSize) / 2;
+
+  let logoDrawn = false;
+  if (logoImg) {
     try {
-      const targetH = 56;
-      const ratio = logo.width / logo.height;
-      const targetW = Math.min(60, Math.round(targetH * ratio));
-      doc.addImage(
-        logo.dataUrl,
-        'PNG',
-        MARGIN_X + 16,
-        y + (headerHeight - targetH) / 2,
-        targetW,
-        targetH
-      );
-      headerTextX = MARGIN_X + 16 + targetW + 14;
+      doc.addImage(logoImg, 'PNG', badgeX, badgeY, badgeSize, badgeSize);
+      logoDrawn = true;
     } catch {
-      headerTextX = MARGIN_X + 18;
+      logoDrawn = false;
     }
   }
 
+  if (!logoDrawn) {
+    doc.setFillColor(14, 28, 54);
+    doc.setDrawColor(0, 120, 212);
+    doc.setLineWidth(1.2);
+    doc.roundedRect(badgeX, badgeY, badgeSize, badgeSize, 8, 8, 'FD');
+
+    // Vector Shield Icon Inside Badge
+    doc.setDrawColor(56, 189, 248);
+    doc.setLineWidth(1.8);
+    const sw = 22;
+    const sh = 28;
+    const scx = badgeX + badgeSize / 2;
+    const scy = badgeY + badgeSize / 2;
+    doc.lines(
+      [
+        [sw / 2, -3],
+        [sw / 2, 3],
+        [0, sh * 0.44],
+        [-sw / 2, sh * 0.56],
+        [-sw / 2, -sh * 0.56],
+        [0, -sh * 0.44],
+      ],
+      scx - sw / 2,
+      scy - sh / 2,
+      [1, 1],
+      'D',
+      true
+    );
+  }
+
+  const headerTextX = badgeX + badgeSize + 16;
   const headerMaxTextW = pageWidth - MARGIN_X - 16 - headerTextX;
 
   doc.setTextColor(76, 194, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.text(
-    'MICROSOFT LEARN STUDENT AMBASSADORS  |  KIIT CHAPTER',
+    'SENTINEL APPSEC  |  APPLICATION SECURITY VERIFICATION',
     headerTextX,
     y + 24
   );
 
   const titleLines = wrapTextExact(
     doc,
-    report.projectName || 'MLSA KIIT Security Verification Report',
+    report.projectName || 'Sentinel Application Security Verification Report',
     'helvetica',
     'bold',
     14,
@@ -244,8 +281,8 @@ export async function exportAuditReportToPdf(report: AuditReport): Promise<void>
 
   const execSummaryText =
     report.findings.length === 0
-      ? 'All enabled deterministic security verification engines completed with 0 exploitable vulnerabilities detected. Every finding in MLSA KIIT Sentinel requires empirical proof; no synthetic warnings are generated.'
-      : `The MLSA KIIT Sentinel engine verified ${report.findings.length} security finding(s) backed by empirical HTTP header responses, SPA-filtered sensitive route probes, live OSV.dev CVE advisories, or exact source code line matches, alongside ${report.passedChecks.length} passed security control(s).`;
+      ? 'All enabled deterministic security verification engines completed with 0 exploitable vulnerabilities detected. Every finding in Sentinel AppSec requires empirical proof; no synthetic warnings are generated.'
+      : `The Sentinel AppSec engine verified ${report.findings.length} security finding(s) backed by empirical HTTP header responses, SPA-filtered sensitive route probes, live OSV.dev CVE advisories, or exact source code line matches, alongside ${report.passedChecks.length} passed security control(s).`;
 
   const execLines = wrapTextExact(
     doc,
@@ -473,6 +510,7 @@ export async function exportAuditReportToPdf(report: AuditReport): Promise<void>
   const totalPages = doc.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
+    stampSentinelWatermark();
     doc.setDrawColor(203, 213, 225);
     doc.setLineWidth(0.5);
     doc.line(
@@ -485,7 +523,7 @@ export async function exportAuditReportToPdf(report: AuditReport): Promise<void>
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
     doc.text(
-      'MLSA KIIT Sentinel  |  Microsoft Learn Student Ambassadors at KIIT',
+      'Sentinel AppSec  |  Engineered by Tanmay Bhardwaj (github.com/tmvoid)',
       MARGIN_X,
       pageHeight - 22
     );
@@ -502,5 +540,5 @@ export async function exportAuditReportToPdf(report: AuditReport): Promise<void>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 
-  doc.save(`mlsa-kiit-audit-${slug || 'report'}.pdf`);
+  doc.save(`sentinel-audit-${slug || 'report'}.pdf`);
 }

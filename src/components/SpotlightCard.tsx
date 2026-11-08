@@ -14,7 +14,7 @@ interface SpotlightCardProps {
 export const SpotlightCard: React.FC<SpotlightCardProps> = ({
   children,
   className = '',
-  spotlightColor = 'rgba(56, 189, 248, 0.12)',
+  spotlightColor = 'rgba(0, 120, 212, 0.14)',
   onClick,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -39,7 +39,7 @@ export const SpotlightCard: React.FC<SpotlightCardProps> = ({
       onMouseLeave={() => setOpacity(0)}
       className={`glass-panel relative overflow-hidden rounded-xl transition-all duration-150 ${
         onClick
-          ? 'cursor-pointer hover:border-white/[0.22] hover:bg-[#101A30]/65'
+          ? 'cursor-pointer hover:border-[#38BDF8]/40'
           : ''
       } ${className}`}
     >
@@ -66,7 +66,7 @@ export const BlurRevealHeading: React.FC<DecryptedHeadingProps> = ({
 }) => {
   return (
     <h1
-      className={`font-display tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.5)] transition-all duration-200 ${className}`}
+      className={`font-display tracking-tight text-white transition-all duration-200 ${className}`}
     >
       {text}
     </h1>

@@ -14,6 +14,12 @@
     color: #F8FAFC;
     letter-spacing: -0.005em;
     overflow-x: hidden;
+    transition: background-color 250ms ease, color 250ms ease;
+  }
+
+  html[data-theme="bright"] body {
+    background-color: #EEF2F7;
+    color: #0F172A;
   }
 
   h1, h2, h3, h4, .font-display {
@@ -40,7 +46,9 @@
   overflow: hidden;
 }
 
-/* High-End Translucent Glassmorphic Workspace & Card Surfaces */
+/* ============================================================================
+   DARK MODE (OBSIDIAN) — High-End Translucent Glassmorphic Surfaces
+   ============================================================================ */
 .glass-workspace {
   background: linear-gradient(
     135deg,
@@ -89,4 +97,126 @@
   border-color: rgba(56, 189, 248, 0.65);
   box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.2);
   outline: none;
+}
+
+/* ============================================================================
+   BRIGHT MODE (ALABASTER FROSTED GLASS) — Daylight Architectural Polarity
+   ============================================================================ */
+.theme-bright .glass-workspace {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.84) 0%,
+    rgba(241, 245, 249, 0.76) 100%
+  );
+  backdrop-filter: blur(24px) saturate(170%);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  border: 1px solid rgba(15, 23, 42, 0.11);
+  box-shadow:
+    0 24px 60px -14px rgba(15, 23, 42, 0.09),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+}
+
+.theme-bright .glass-panel {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.80) 0%,
+    rgba(248, 250, 252, 0.72) 100%
+  );
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  box-shadow:
+    0 14px 34px -10px rgba(15, 23, 42, 0.07),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+}
+
+.theme-bright .glass-subpanel {
+  background: rgba(241, 245, 249, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(15, 23, 42, 0.10);
+}
+
+.theme-bright .glass-input {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  color: #0F172A !important;
+}
+
+.theme-bright .glass-input::placeholder {
+  color: #64748B !important;
+}
+
+.theme-bright .glass-input:focus {
+  background: #FFFFFF;
+  border-color: #0078D4;
+  box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.18);
+  outline: none;
+}
+
+/* Automatic High-Contrast Text & Divider Remapping in Bright Mode */
+.theme-bright .text-white {
+  color: #0F172A !important;
+}
+
+.theme-bright .bg-\[\#0078D4\] .text-white,
+.theme-bright button.bg-\[\#0078D4\],
+.theme-bright button.bg-\[\#0078D4\] span {
+  color: #FFFFFF !important;
+}
+
+.theme-bright .text-\[\#F8FAFC\],
+.theme-bright .text-\[\#E2E8F0\] {
+  color: #1E293B !important;
+}
+
+.theme-bright .text-\[\#CBD5E1\] {
+  color: #334155 !important;
+}
+
+.theme-bright .text-\[\#94A3B8\] {
+  color: #475569 !important;
+}
+
+.theme-bright .text-\[\#38BDF8\] {
+  color: #0067B8 !important;
+}
+
+.theme-bright .text-\[\#10B981\] {
+  color: #047857 !important;
+}
+
+.theme-bright .text-\[\#EF4444\] {
+  color: #DC2626 !important;
+}
+
+.theme-bright .text-\[\#F97316\] {
+  color: #EA580C !important;
+}
+
+.theme-bright .text-\[\#F59E0B\] {
+  color: #B45309 !important;
+}
+
+.theme-bright .bg-black\/20,
+.theme-bright .bg-black\/40,
+.theme-bright .bg-black\/45,
+.theme-bright .bg-black\/50 {
+  background-color: rgba(226, 232, 240, 0.65) !important;
+}
+
+.theme-bright .divide-white\/\[0\.10\] > :not([hidden]) ~ :not([hidden]),
+.theme-bright .divide-white\/\[0\.09\] > :not([hidden]) ~ :not([hidden]),
+.theme-bright .divide-white\/\[0\.08\] > :not([hidden]) ~ :not([hidden]),
+.theme-bright .divide-white\/\[0\.07\] > :not([hidden]) ~ :not([hidden]),
+.theme-bright .divide-white\/\[0\.06\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(15, 23, 42, 0.09) !important;
+}
+
+.theme-bright .border-white\/\[0\.10\],
+.theme-bright .border-white\/\[0\.09\],
+.theme-bright .border-white\/\[0\.08\],
+.theme-bright .border-white\/\[0\.12\],
+.theme-bright .border-white\/\[0\.15\] {
+  border-color: rgba(15, 23, 42, 0.11) !important;
 }
