@@ -40,6 +40,7 @@ import { ReportExportModal } from './components/ReportExportModal.tsx';
 import { BlurRevealHeading, SpotlightCard } from './components/SpotlightCard.tsx';
 import { ThemeToggle, type ThemeMode } from './components/ThemeToggle.tsx';
 import { SENTINEL_LOGO_SRC } from './utils/assets.ts';
+import { runClientSideAudit } from './utils/clientAuditEngine.ts';
 import type {
   AuditModuleId,
   AuditReport,
@@ -239,19 +240,28 @@ export default function App() {
           targetConfig.githubRepoUrl.trim() ||
           'Target Application Audit';
 
-        const res = await fetch('/api/audit/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...targetConfig,
-            projectName: inferredName,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || `Audit failed with HTTP ${res.status}`);
+        let report: AuditReport | null = null;
+        try {
+          const res = await fetch('/api/audit/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...targetConfig,
+              projectName: inferredName,
+            }),
+          });
+          const contentType = res.headers.get('content-type') || '';
+          if (res.ok && contentType.includes('application/json')) {
+            report = (await res.json()) as AuditReport;
+          }
+        } catch {
+          // Backend API unreachable or running on static hosting like GitHub Pages
         }
-        const report = data as AuditReport;
+
+        // If backend is not available (e.g., deployed statically on GitHub Pages), run in-browser verification
+        if (!report) {
+          report = await runClientSideAudit(targetConfig, inferredName);
+        }
         if (baselineForDelta) {
           setRemediationDelta(
             computeRemediationDelta(baselineForDelta, report)
