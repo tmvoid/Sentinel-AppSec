@@ -23,6 +23,41 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
+// Enable CORS on /api/* routes so static mirrors (e.g., GitHub Pages at tmvoid.github.io)
+// can connect to this live Node.js backend engine for unrestricted raw socket audits
+app.use('/api', (req, res, next) => {
+  const origin = req.headers.origin;
+  res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  // Support W3C Private Network Access (PNA) so https://tmvoid.github.io can connect to http://localhost:3000
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
+
+// Live Engine Health & Capability Endpoint
+app.get('/api/health', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    engine: 'node-direct-sockets',
+    mode: 'fullstack-unrestricted',
+    timestamp: new Date().toISOString(),
+    capabilities: [
+      'http-raw-headers',
+      'cors-origin-reflection',
+      'dotfile-spa-filter',
+      'js-bundle-harvester',
+      'jwt-hmac-cracker',
+      'graphql-protocol-prober',
+      'osv-cve-scanner',
+      'deterministic-sast',
+    ],
+  });
+});
+
 // Helper to sign an HS256 JWT for local sandbox testing
 function createSignedJwt(
   payload: Record<string, unknown>,
@@ -2672,7 +2707,7 @@ async function startServer() {
     });
   }
 
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Sentinel AppSec server listening on http://0.0.0.0:${PORT}`);
   });

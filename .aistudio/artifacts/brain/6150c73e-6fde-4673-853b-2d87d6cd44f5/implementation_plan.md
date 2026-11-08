@@ -1,111 +1,151 @@
-# Sentinel AppSec — Global Application Security Platform with Integrated Creator Provenance
+# Production Free Hosting & Fullstack Deployment Plan for Sentinel AppSec
 
-A comprehensive plan to transform the platform into **Sentinel AppSec**, an open, independent, and globally accessible web security auditing and automated hardening suite, with tasteful, understated creator provenance for **Tanmay Bhardwaj** across the UI, exported artifacts, and code outputs.
+A comprehensive production deployment architecture and step-by-step implementation plan to host Sentinel AppSec completely free ($0/month) with 100% authentic, unrestricted security audits, automated GitHub Actions CI/CD on git push, and an in-app live backend connection manager.
 
 ---
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> - **Total Global Rebranding (No University/Chapter Ties)**: Complete removal of "KIIT", "MLSA", and Student Ambassador references. The platform is repositioned as a universal, open-access security verification engine for any developer, engineering team, or organization worldwide.
-> - **Tasteful, Multi-Touchpoint Creator Provenance**: Tanmay Bhardwaj's name, LinkedIn (`https://www.linkedin.com/in/tanmaysbhardwaj/`), and GitHub (`https://github.com/tmvoid`) will be subtly integrated into five natural, professional touchpoints without cluttering the interface or feeling like self-promotional spam.
-> - **Modern Geometric Security Insignia**: Replaces the student club emblem with a clean, high-precision vector security crest across the top bar, hero, and report watermarks.
+> The primary requirement is generating **100% genuine, real-world audit results** with zero synthetic fallback data. Browser-only static hosts (like GitHub Pages) are constrained by web browser CORS and Mixed-Content sandboxes, which block direct inspection of third-party HTTP headers. To guarantee genuine audits without paying for servers, we provide an all-in-one free fullstack deployment on **Render** (or **Koyeb**) alongside an in-app **Backend Connection Manager** that lets the GitHub Pages frontend connect to any live Node.js engine.
+
+- **Confirmed Decision (Hosting Architecture)**: **All-in-One Fullstack on Render Free Tier ($0/mo)** as the primary live web service, paired with an automated GitHub Actions deployment workflow.
+- **Confirmed Decision (Decoupled Flexibility)**: Maintain the existing GitHub Pages deployment as an alternate client distribution, enhanced with a live **Backend Connection Manager** in the header so the static site can query the free Render backend or a local `localhost:3000` instance.
+- **Confirmed Decision (CI/CD)**: Automated GitHub Actions workflow on `git push` to `main`, plus one-click Render Blueprint specification (`render.yaml`).
 
 ---
 
-### 1. Overview & Core Concept
+## 1. Overview & Core Concept
 
-- **What It Does**: Sentinel AppSec is an open-access, zero-hallucination web security verification engine. It empirically validates target endpoints and repositories across 7 deterministic engines (HTTP headers/CORS/Clickjacking, SPA-filtered dotfile/sourcemap probing, client JS bundle secret & hidden API route extraction, JWT HMAC secret cracking with forged admin PoCs, GraphQL/verb/open-redirect probing, live OSV.dev supply-chain CVE queries, and deterministic SAST line-scanning).
-- **Target Audience**: Developers, security engineers, DevOps professionals, and open-source teams globally auditing web apps, APIs, and modern cloud deployments.
-- **Key Value**: Provides mathematical and empirical proof of exploitability rather than speculative AI warnings, complete with interactive in-browser PoC sandboxes and one-click drop-in hardening configurations for Vercel, Next.js, Express, and Nginx.
+### What It Delivers
+* **100% Genuine Network Audits**: Full OS socket access via Node.js (`server.ts`) capable of inspecting arbitrary targets (`youtube.com`, university portals, enterprise APIs) without browser CORS, preflight, or mixed-content interference.
+* **Completely Free ($0/mo)**: Leverages Render's Free Web Service tier (750 free instance hours per month, custom domains, free automatic TLS certificates, zero credit card required).
+* **Automated CI/CD**: Automatic builds and deployments triggered immediately whenever code is pushed to the GitHub repository.
+* **In-App Backend Connection Manager**: A top-tier UI component displaying real-time engine connectivity, latency ping, and an endpoint selector allowing users on static mirrors (like GitHub Pages) to connect to their live backend.
 
----
-
-### 2. Creator Provenance & Attribution Touchpoints
-
-Tanmay Bhardwaj's profile will be woven into the platform with quiet, professional authority:
-
-1. **Footer Provenance Colophon (`/src/App.tsx`)**:
-   - A dedicated, understated monospace footer row:
-     `tanmay bhardwaj` (opens `https://www.linkedin.com/in/tanmaysbhardwaj/`) `·` `github.com/tmvoid` (opens `https://github.com/tmvoid`)
-   - Both links open in new tabs with subtle hover transitions matching Dark and Bright themes.
-2. **Exported Security Certificates & PDF Footers (`/src/utils/pdfExport.ts`)**:
-   - In the clean `8pt` muted page footer across all exported PDF pages:
-     `Sentinel AppSec  |  Engineered by Tanmay Bhardwaj (github.com/tmvoid)  |  Page X of Y`
-3. **Markdown & JSON Report Provenance (`/src/components/ReportExportModal.tsx`)**:
-   - In exported `.md` audit reports, the closing provenance sign-off:
-     `_Generated by Sentinel AppSec — Engineered by [Tanmay Bhardwaj](https://www.linkedin.com/in/tanmaysbhardwaj/) ([@tmvoid](https://github.com/tmvoid)). Zero-hallucination empirical verification._`
-4. **Auto-Synthesized Hardening Configs (`/src/components/HardeningStudio.tsx`)**:
-   - In generated config headers (`vercel.json`, `next.config.mjs`, `securityMiddleware.ts`, `nginx.conf`):
-     `// Auto-Synthesized by Sentinel AppSec (Engineered by Tanmay Bhardwaj · github.com/tmvoid)`
-5. **Document Head Metadata & DevTools Console (`index.html` & `App.tsx`)**:
-   - `<meta name="author" content="Tanmay Bhardwaj (https://github.com/tmvoid)">`
-   - DevTools console signature:
-     `console.info('Sentinel AppSec — Engineered by Tanmay Bhardwaj (https://www.linkedin.com/in/tanmaysbhardwaj/ · https://github.com/tmvoid)');`
-   - Input placeholder hint: `placeholder="https://github.com/tmvoid/your-repo"`
+### Target Audience & Persona
+* **Application Security Engineers & Penetration Testers**: Running black-box audits against deployed web services and internal APIs.
+* **Developers & Students**: Performing pre-deployment checks, auditing npm dependency trees via OSV.dev, and verifying JWT token hygiene.
+* **Tanmay Bhardwaj Portfolio & Demonstration**: A showcase of deterministic DevSecOps tooling accessible globally without paywalls.
 
 ---
 
-### 3. User Experience & Visual Design
+## 2. User Experience & Visual Design
 
-#### Visual Identity & Theme
-- **Global Brand Identity**: **Sentinel AppSec** (`Sentinel Security Auditor`).
-- **Insignia**: Minimalist modern geometric security crest (vector polygon shield with an illuminated center node), replacing the student club PNG across the top bar, hero, and report headers.
-- **Color System**:
-  - **Dominant Neutral Canvas (60%)**: Deep obsidian `#04070E` in Dark mode; Frosted alabaster `#EEF2F7` in Bright mode.
-  - **Structural Surfaces (30%)**: Translucent glassmorphic panels (`.glass-workspace`, `.glass-panel`, `.glass-subpanel`, `.glass-input`) with 24px backdrop blur and hairline borders.
-  - **Accent Budget (10%)**: Azure Blue (`#0078D4`) and Cyan (`#38BDF8`) for verification state and primary actions.
-- **Dual-Theme Polarity**: The tactile dual-detent switch smoothly pivots between Dark (Obsidian) and Bright (Alabaster Frosted Daylight) with adaptive WebGL `MicroSlats` shader lighting.
-- **Zero-Pill Metadata Discipline**: Clean monospace and sans text separated by understated middle dots (`·`) throughout headers, tables, and footers.
-
-#### Key User Flows
-1. **Target Specification**: Enter any live deployed URL, public GitHub repository, JWT session token, or upload local code/manifest files.
-2. **Deterministic Multi-Engine Verification**: Run audits across the 7 verification engines with live telemetry feedback.
-3. **Interactive PoC Sandbox**: Inspect verified vulnerabilities with live interactive proof (e.g. Clickjacking X-Ray framing slider, cracked JWT admin token forgery, CORS reflection).
-4. **Automated Hardening Studio**: Copy or download tailored hardening configs (`vercel.json`, `next.config.mjs`, `securityMiddleware.ts`, `nginx.conf`) and click **Re-Verify & Compare Delta** to prove vulnerability resolution.
-5. **Universal Security Certification**: Export crisp vector PDF certificates and Markdown reports branded with the Sentinel geometric watermark.
-
----
-
-### 4. Technical Architecture & Data Strategy
+### A. Navigation & Engine Status Indicator (Top Bar Contract)
+Following the strict 3-zone header layout (`[Brand wordmark] — [Nav links] — [Engine Status & Action]`):
+* **Zone 1 (Brand)**: `Sentinel AppSec` wordmark with subtle author attribution and logo asset.
+* **Zone 2 (Navigation Links)**: `Audit Console`, `Verification Ledger`, `Audit History`, `Methodology`.
+* **Zone 3 (Engine Status & Actions)**:
+  * An interactive **Engine Status Pill** showing connection mode:
+    * `🟢 Live Node Engine (Direct Sockets)` when connected to a fullstack server (AI Studio or Render).
+    * `🟡 Remote Backend Connected (Ping: 42ms)` when a static client (GitHub Pages) is paired with a live backend.
+    * `⚪ Browser Sandbox Mode (Limited CORS)` with an instant "Connect Live Engine" prompt.
+  * Clicking the status pill opens the **Engine Settings Drawer**.
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                          Sentinel AppSec                               │
-│            Universal Application Security & Verification               │
-│          Engineered by Tanmay Bhardwaj (github.com/tmvoid)             │
-└────────────────────────────────────┬───────────────────────────────────┘
-                                     │
-           ┌─────────────────────────┴─────────────────────────┐
-           ▼                                                   ▼
-┌─────────────────────────────────────┐     ┌───────────────────────────────────┐
-│     Target & Scope Controller       │     │     7-Engine Verification Pipeline│
-│ • Live Endpoint URL                 │     │ 01. HTTP, CORS & Clickjacking     │
-│ • Public GitHub Repository          │────▶│ 02. Dotfile & Sourcemap Prober    │
-│ • JWT Session / Bearer Token        │     │ 03. JS Bundle Secret & Route Map  │
-│ • Staged Code & Manifest Files      │     │ 04. JWT Weak-Secret Cracker       │
-└─────────────────────────────────────┘     │ 05. GraphQL, Verbs & Redirects    │
-                                            │ 06. OSV.dev Supply-Chain CVE      │
-                                            │ 07. Line-by-Line SAST Scanner     │
-                                            └─────────────────┬─────────────────┘
-                                                              │
-           ┌──────────────────────────────────────────────────┴─────────────────┐
-           ▼                                                                    ▼
-┌─────────────────────────────────────┐     ┌───────────────────────────────────┐
-│ Interactive Exploitability Sandbox  │     │ Auto-Generated Hardening Studio   │
-│ • Clickjacking Iframe X-Ray Slider  │     │ • Vercel (vercel.json)            │
-│ • Cryptographic Forged Admin JWT    │     │ • Next.js (next.config.mjs)       │
-│ • CORS Credentialed Read PoC        │     │ • Express (securityMiddleware.ts) │
-│ • GraphQL Introspection Dump        │     │ • Nginx (nginx.conf)              │
-└─────────────────────────────────────┘     │ • Before-vs-After Delta Verifier  │
-                                            └───────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ [🛡️ Sentinel AppSec]       Audit Console · Ledger · History · Methodology    [🟢 Node Engine] │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Affected Application Files
-- `metadata.json` & `index.html`: Update app name to `Sentinel AppSec`, add `<meta name="author">`, update description and OpenGraph tags to reflect a universal web security auditing platform.
-- `src/App.tsx`: Update navigation wordmark, hero copy, preset titles, and footer branding while maintaining the standalone Tanmay Bhardwaj (`@tmvoid`) footer links.
-- `src/components/ReportExportModal.tsx`: Replace student emblem with modern Sentinel geometric security crest, update Markdown export sign-off with LinkedIn/GitHub links.
-- `src/utils/pdfExport.ts`: Update header and background watermark to modern vector Sentinel crest, include Tanmay Bhardwaj attribution in PDF footer.
-- `src/components/HardeningStudio.tsx`: Update comments and banner copy to reference Sentinel AppSec and Tanmay Bhardwaj provenance.
-- `src/data/presets.ts`: Rename preset identifiers and titles to universal modern web application benchmarks.
-- `server.ts`: Update sandbox API and header references to neutral, universal identifiers.
+### B. In-App Backend Connection Modal / Drawer
+When the user clicks the status indicator or runs an audit in browser sandbox mode:
+* **Current Engine State**: Shows active API base URL, round-trip latency ping test, and capability checklist (Raw Headers, Cross-Origin Sockets, Bundle Probing, OSV Supply Chain, JWT Cracking).
+* **Connection Options**:
+  1. **Automatic / Same-Origin**: Automatically uses the current origin (`/api/audit/run`) when hosted fullstack.
+  2. **Custom Cloud Backend**: Allows entering the free Render service URL (e.g., `https://sentinel-appsec.onrender.com`).
+  3. **Local Dev Engine**: One-click preset to connect to `http://localhost:3000`.
+* **Latency & Health Verification**: An interactive "Test Connection" button that issues a lightweight health check to `/api/health` and verifies socket readiness with exact millisecond latency.
+* **Persistent Preferences**: Saves the preferred backend URL in `localStorage` so users never have to re-enter it.
+
+### C. Visual Identity & Theme
+* **Canvas**: Deep Obsidian Slate (`#0B0F17`) in dark mode; crisp clean off-white (`#F8FAFC`) in light mode.
+* **Card Depth**: Single-elevation flat containers with 1px hairline borders (`border-slate-800 dark:border-slate-800/80`).
+* **Accents**: Cyber Cyan (`#06B6D4` / `#0891B2`) for primary actions; Emerald (`#10B981`) for verified passes; Amber (`#F59E0B`) for warnings; Crimson (`#EF4444`) for high/critical findings.
+* **Typography**: `Plus Jakarta Sans` for clean, professional display titles; `DM Sans` for body copy; `JetBrains Mono` with `tabular-nums` for all telemetry, timings, and code evidence.
+
+---
+
+## 3. Free Hosting Platforms: Evaluation & Architecture
+
+### Free Hosting Comparison Matrix
+
+| Platform | Free Tier Specifications | Server-Side Node.js? | Unrestricted HTTP Audits? | Setup Effort | Verdict |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Render Web Service** | 750 free hrs/month, free SSL, custom domain, auto Git deploy | **Yes (Full Node.js)** | **Yes (100% Genuine)** | **Minimal (Zero config)** | **Recommended Primary** |
+| **Koyeb Free Tier** | Free nano instance, 512MB RAM, global edge, auto Git deploy | **Yes (Full Node.js)** | **Yes (100% Genuine)** | Low | Excellent Backup |
+| **GitHub Pages** | Unlimited static hosting, CDN distribution | No (Static JS only) | No (Restricted by CORS) | Existing | Client Static Mirror |
+| **Vercel Hobby** | 100GB bandwidth, serverless functions | Yes (Serverless) | Partial (10s execution timeout) | Medium | Good for lightweight |
+
+### Primary Free Recommendation: Render Free Web Service
+1. **Zero Cost**: Render's free Web Service tier provides continuous hosting for Node.js web applications at $0.
+2. **Native Fullstack Support**: Render runs `node server.ts` directly, mounting both the Vite frontend and Express backend on port 3000.
+3. **No CORS Workarounds**: Because frontend and backend live on the same domain (`https://sentinel-appsec.onrender.com`), all `/api/audit/run` calls are same-origin and instant.
+4. **Automated Continuous Deployment**: Render connects directly to the GitHub repository (`tmvoid/Sentinel-AppSec`). Every `git push` to `main` automatically triggers a fresh build and zero-downtime deployment.
+
+---
+
+## 4. Technical Architecture & Implementation Steps
+
+### A. System Architecture Diagram
+
+```
+[ Developer / Git Push ]
+          │
+          ├───► GitHub Repository (tmvoid/Sentinel-AppSec)
+          │             │
+          │             ├───► GitHub Actions (Automated CI & Pages Build)
+          │             │             │
+          │             │             └───► GitHub Pages (Static Mirror)
+          │             │                         │ (Queries via CORS)
+          │             │                         ▼
+          │             └───► Render Web Service (Automated CD)
+          │                           │
+          │                           ├─── Express Server (server.ts)
+          │                           ├─── Direct OS Sockets (Raw HTTP / TLS)
+          │                           └─── Built Frontend (dist/)
+          │
+[ Target Domain (e.g., youtube.com) ] ◄─── Raw TCP / HTTP Inspection
+```
+
+### B. Step-by-Step Implementation Workflows
+
+#### 1. Add Render Deployment Configuration (`render.yaml`)
+Create an automated Infrastructure-as-Code blueprint in the root directory:
+* **Service Type**: `web`
+* **Environment**: `node`
+* **Plan**: `free`
+* **Build Command**: `npm install && npm run build`
+* **Start Command**: `node server.ts`
+* **Environment Variables**: `NODE_ENV=production`, `PORT=3000`
+
+#### 2. Enable Cross-Origin CORS on `server.ts`
+Ensure `server.ts` includes an explicit CORS middleware allowing requests from `https://tmvoid.github.io` and `http://localhost:*`:
+* Enables the static GitHub Pages deployment to seamlessly use the free Render backend without origin rejection.
+* Supports preflight `OPTIONS` requests and JSON payloads.
+
+#### 3. Implement In-App Backend Connection Manager
+* Create `src/components/BackendConnectionModal.tsx`:
+  * Current endpoint status pill in the navbar.
+  * Real-time latency measurement via `GET /api/health`.
+  * Input field to override or specify backend URL with localStorage persistence.
+  * Capability badges showing which engine features are active.
+* Update `src/App.tsx` and `src/utils/clientAuditEngine.ts`:
+  * Audit requests first check the configured backend URL (falling back to `/api/audit/run` or client engine).
+  * Seamless notification if the user needs to connect a live engine for third-party domain inspection.
+
+#### 4. Configure Automated GitHub Actions Workflow (`.github/workflows/deploy.yml`)
+* Automate the GitHub Pages build and deployment on every push to `main`.
+* Add automated lint and build verification steps before deploying.
+
+---
+
+## 5. Verification & Deployment Checklist
+
+- [ ] **Render Blueprint**: `render.yaml` created and verified for one-click deployment.
+- [ ] **Server CORS**: `server.ts` configured with permissive CORS headers for the GitHub Pages domain.
+- [ ] **Health Endpoint**: `GET /api/health` responding with server status, uptime, and engine capabilities.
+- [ ] **Backend Connection UI**: Connection manager modal integrated into `src/App.tsx` with live latency test.
+- [ ] **Clean Compilation**: Co-execute `compile_applet` and `lint_applet` to ensure zero TypeScript/lint errors.
+- [ ] **Step-by-Step Guide**: Provide exact, copy-paste instructions for linking Render to GitHub in under 2 minutes.

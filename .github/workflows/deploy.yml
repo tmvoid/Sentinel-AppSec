@@ -62,3 +62,8 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Trigger Render Fullstack Backend Deployment (Optional Webhook)
+        if: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
+        run: curl -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+

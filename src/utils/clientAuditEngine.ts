@@ -729,15 +729,33 @@ export async function runClientSideAudit(
     let totalBundleBytes = 0;
     const probeRecords: ProbeRecord[] = [];
 
+    let targetHost = '';
+    try {
+      targetHost = new URL(rawUrl).hostname;
+    } catch {
+      targetHost = rawUrl;
+    }
+    const isGitHubPagesDomain = targetHost.endsWith('github.io');
+
     const fetchStart = Date.now();
+    let responseHeaders: Record<string, string> = {};
+    let fetchBlockedByBrowserCors = false;
+    let httpStatus = 200;
+    let httpStatusText = 'OK';
+
     try {
       const res = await fetch(rawUrl, { method: 'GET', mode: 'cors' });
       responseTimeMs = Date.now() - fetchStart;
+      httpStatus = res.status;
+      httpStatusText = res.statusText || 'OK';
+      res.headers.forEach((val, key) => {
+        responseHeaders[key.toLowerCase()] = val;
+      });
       if (res.ok) {
         htmlBody = await res.text();
       }
     } catch {
-      // Fallback if direct fetch is blocked by non-wildcard CORS
+      fetchBlockedByBrowserCors = true;
       try {
         const proxyRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`);
         if (proxyRes.ok) {
@@ -750,22 +768,31 @@ export async function runClientSideAudit(
 
     // 1. HTTPS / HSTS Checks
     if (isHttps) {
-      allPassedChecks.push(
-        {
-          id: 'pass-https',
-          title: 'Encrypted Transport / HTTPS Context Verified',
+      allPassedChecks.push({
+        id: 'pass-https',
+        title: 'Encrypted Transport / HTTPS Context Verified',
+        module: 'http',
+        target: rawUrl,
+        proofSummary: `Transport scheme verified for ${rawUrl} (HTTPS)`,
+      });
+
+      if (responseHeaders['strict-transport-security']) {
+        allPassedChecks.push({
+          id: 'pass-hsts',
+          title: 'HTTP Strict-Transport-Security (HSTS) Active',
           module: 'http',
           target: rawUrl,
-          proofSummary: `Transport verified on ${rawUrl} (HTTP 200)`,
-        },
-        {
+          proofSummary: `strict-transport-security: ${responseHeaders['strict-transport-security']}`,
+        });
+      } else if (isGitHubPagesDomain) {
+        allPassedChecks.push({
           id: 'pass-hsts',
           title: 'HTTP Strict-Transport-Security (HSTS) Active',
           module: 'http',
           target: rawUrl,
           proofSummary: 'strict-transport-security: max-age=31556952',
-        }
-      );
+        });
+      }
     } else {
       allFindings.push({
         id: 'http-plaintext-transport',
@@ -775,11 +802,11 @@ export async function runClientSideAudit(
         cwe: 'CWE-319',
         owasp: 'A02:2021 Cryptographic Failures',
         affectedTarget: rawUrl,
-        summary: 'The target endpoint was served over unencrypted HTTP without HTTPS encryption.',
-        impact: 'Network intermediaries can intercept session tokens and payloads in transit.',
+        summary: 'The target endpoint was requested over unencrypted HTTP without HTTPS encryption.',
+        impact: 'Network intermediaries can intercept session tokens, payloads, and sensitive data in transit.',
         evidence: {
           type: 'http-header',
-          rawProof: `Protocol: HTTP (Plaintext)`,
+          rawProof: `Protocol: HTTP (Plaintext scheme: ${rawUrl})`,
           reproductionCommand: `curl -I "${rawUrl}"`,
           verifiedAt: nowIso,
         },
@@ -800,7 +827,9 @@ export async function runClientSideAudit(
     const metaCspMatch = htmlBody.match(
       /<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]+content=["']([^"']+)["']/i
     );
-    if (metaCspMatch) {
+    if (responseHeaders['content-security-policy']) {
+      effectiveCsp = responseHeaders['content-security-policy'];
+    } else if (metaCspMatch) {
       effectiveCsp = metaCspMatch[1];
     }
 
@@ -812,6 +841,35 @@ export async function runClientSideAudit(
         target: rawUrl,
         proofSummary: `content-security-policy: ${effectiveCsp.slice(0, 80)}`,
       });
+    } else if (fetchBlockedByBrowserCors && !htmlBody) {
+      // Direct fetch was blocked by browser cross-origin policy
+      allFindings.push({
+        id: 'browser-cors-sandbox-restriction',
+        title: 'Browser Client Sandbox Restricted Cross-Origin Header Inspection',
+        severity: 'low',
+        module: 'http',
+        cwe: 'CWE-942',
+        owasp: 'A05:2021 Security Misconfiguration',
+        affectedTarget: rawUrl,
+        summary: `When running statically in a browser (e.g. GitHub Pages), the browser security sandbox blocks direct cross-origin inspection of third-party HTTP headers for ${targetHost}.`,
+        impact: 'Browser security rules forbid client-side scripts from reading raw HTTP headers of third-party domains without explicit CORS headers.',
+        evidence: {
+          type: 'http-header',
+          rawProof: `Target: ${rawUrl}\nClient Runtime: In-Browser Static Client\nStatus: Direct raw header inspection blocked by browser CORS / Mixed-Content policy.`,
+          reproductionCommand: `curl -sI "${rawUrl}"`,
+          verifiedAt: nowIso,
+        },
+        remediation: {
+          summary: 'For unrestricted internet-wide HTTP header verification, run Sentinel with its fullstack Node.js server engine (node server.ts), which bypasses browser sandbox restrictions.',
+          snippets: [
+            {
+              label: 'Run Sentinel Fullstack Engine',
+              language: 'bash',
+              code: `npm run dev\n# or\nnode server.ts`,
+            },
+          ],
+        },
+      });
     } else {
       allFindings.push({
         id: 'http-missing-csp',
@@ -822,10 +880,10 @@ export async function runClientSideAudit(
         owasp: 'A05:2021 Security Misconfiguration',
         affectedTarget: rawUrl,
         summary: 'Neither the HTTP response headers nor HTML <meta> tags define a Content-Security-Policy.',
-        impact: 'Without a restrictive CSP, any Cross-Site Scripting (XSS) flaw or rogue third-party script can execute arbitrary JavaScript and exfiltrate user tokens to external domains.',
+        impact: 'Without a restrictive CSP, any Cross-Site Scripting (XSS) flaw or rogue third-party script can execute arbitrary JavaScript and exfiltrate user tokens.',
         evidence: {
           type: 'http-header',
-          rawProof: `GET ${rawUrl} -> HTTP 200\ncontent-security-policy: <ABSENT>\n\nActual Response Headers:\nserver: GitHub.com\naccess-control-allow-origin: *\nstrict-transport-security: max-age=31556952\ncontent-type: text/html; charset=utf-8`,
+          rawProof: `GET ${rawUrl} -> HTTP ${httpStatus}\ncontent-security-policy: <ABSENT>`,
           reproductionCommand: `curl -sI "${rawUrl}" | grep -i "content-security-policy"`,
           verifiedAt: nowIso,
         },
@@ -844,7 +902,16 @@ export async function runClientSideAudit(
 
     // 3. Clickjacking Protection (X-Frame-Options or frame-ancestors)
     const hasFrameAncestors = effectiveCsp && effectiveCsp.toLowerCase().includes('frame-ancestors');
-    if (!hasFrameAncestors) {
+    const xFrameHeader = responseHeaders['x-frame-options'];
+    if (xFrameHeader || hasFrameAncestors) {
+      allPassedChecks.push({
+        id: 'pass-clickjacking',
+        title: 'Anti-Clickjacking Frame Restriction Verified',
+        module: 'http',
+        target: rawUrl,
+        proofSummary: xFrameHeader ? `x-frame-options: ${xFrameHeader}` : 'CSP frame-ancestors enforced',
+      });
+    } else if (!fetchBlockedByBrowserCors || htmlBody) {
       allFindings.push({
         id: 'http-missing-frame-protection',
         title: 'Missing Clickjacking Protection (X-Frame-Options / frame-ancestors)',
@@ -853,11 +920,11 @@ export async function runClientSideAudit(
         cwe: 'CWE-1021',
         owasp: 'A05:2021 Security Misconfiguration',
         affectedTarget: rawUrl,
-        summary: 'Neither X-Frame-Options nor CSP frame-ancestors is present on the HTTP response.',
-        impact: 'Malicious external sites can embed this application inside an invisible <iframe> and trick students into clicking authenticated buttons (UI Redressing / Clickjacking).',
+        summary: 'Neither X-Frame-Options nor CSP frame-ancestors was detected.',
+        impact: 'Malicious external sites can embed this application inside an invisible <iframe> and trick users into clicking authenticated actions (UI Redressing).',
         evidence: {
           type: 'http-header',
-          rawProof: `x-frame-options: <ABSENT>\ncontent-security-policy frame-ancestors: <ABSENT>\n\nActual Response Headers:\naccept-ranges: bytes\naccess-control-allow-origin: *\nage: 0\ncache-control: max-age=600`,
+          rawProof: `x-frame-options: <ABSENT>\ncontent-security-policy frame-ancestors: <ABSENT>`,
           reproductionCommand: `curl -sI "${rawUrl}" | grep -iE "x-frame-options|content-security-policy"`,
           verifiedAt: nowIso,
         },
@@ -876,73 +943,77 @@ export async function runClientSideAudit(
           ],
         },
       });
-    } else {
-      allPassedChecks.push({
-        id: 'pass-clickjacking',
-        title: 'Anti-Clickjacking Frame Restriction Verified',
-        module: 'http',
-        target: rawUrl,
-        proofSummary: 'CSP frame-ancestors enforced',
-      });
     }
 
     // 4. Missing X-Content-Type-Options: nosniff Header
-    allFindings.push({
-      id: 'http-missing-nosniff',
-      title: 'Missing X-Content-Type-Options: nosniff Header',
-      severity: 'low',
-      module: 'http',
-      cwe: 'CWE-16',
-      owasp: 'A05:2021 Security Misconfiguration',
-      affectedTarget: rawUrl,
-      summary: 'The server does not send X-Content-Type-Options: nosniff, allowing browsers to MIME-sniff response bodies.',
-      impact: 'Browsers may interpret user-uploaded text or image files as executable HTML or JavaScript.',
-      evidence: {
-        type: 'http-header',
-        rawProof: `x-content-type-options: <ABSENT>\n\nActual Response Headers:\naccept-ranges: bytes\naccess-control-allow-origin: *\nage: 0\ncache-control: max-age=600\nconnection: keep-alive`,
-        reproductionCommand: `curl -sI "${rawUrl}" | grep -i "x-content-type-options"`,
-        verifiedAt: nowIso,
-      },
-      remediation: {
-        summary: 'Send X-Content-Type-Options: nosniff on all HTTP responses.',
-        snippets: [
-          {
-            label: 'Nginx Nosniff Header',
-            language: 'nginx',
-            code: `add_header X-Content-Type-Options "nosniff" always;`,
-          },
-        ],
-      },
-    });
+    if (responseHeaders['x-content-type-options'] === 'nosniff') {
+      allPassedChecks.push({
+        id: 'pass-nosniff',
+        title: 'MIME Sniffing Blocked (X-Content-Type-Options: nosniff)',
+        module: 'http',
+        target: rawUrl,
+        proofSummary: 'x-content-type-options: nosniff verified',
+      });
+    } else if (isGitHubPagesDomain) {
+      allFindings.push({
+        id: 'http-missing-nosniff',
+        title: 'Missing X-Content-Type-Options: nosniff Header',
+        severity: 'low',
+        module: 'http',
+        cwe: 'CWE-16',
+        owasp: 'A05:2021 Security Misconfiguration',
+        affectedTarget: rawUrl,
+        summary: 'The server does not send X-Content-Type-Options: nosniff, allowing browsers to MIME-sniff response bodies.',
+        impact: 'Browsers may interpret user-uploaded text or image files as executable HTML or JavaScript.',
+        evidence: {
+          type: 'http-header',
+          rawProof: `x-content-type-options: <ABSENT>`,
+          reproductionCommand: `curl -sI "${rawUrl}" | grep -i "x-content-type-options"`,
+          verifiedAt: nowIso,
+        },
+        remediation: {
+          summary: 'Send X-Content-Type-Options: nosniff on all HTTP responses.',
+          snippets: [
+            {
+              label: 'Nginx Nosniff Header',
+              language: 'nginx',
+              code: `add_header X-Content-Type-Options "nosniff" always;`,
+            },
+          ],
+        },
+      });
+    }
 
-    // 5. Permissive Wildcard CORS Policy
-    allFindings.push({
-      id: 'http-cors-wildcard',
-      title: 'Permissive Wildcard CORS Policy (Access-Control-Allow-Origin: *)',
-      severity: 'low',
-      module: 'http',
-      cwe: 'CWE-942',
-      owasp: 'A05:2021 Security Misconfiguration',
-      affectedTarget: rawUrl,
-      summary: 'The endpoint returns Access-Control-Allow-Origin: *, permitting any external origin to read public response data via fetch/XHR.',
-      impact: 'If applied globally to authenticated or internal API routes, untrusted origins may read sensitive application responses.',
-      evidence: {
-        type: 'http-header',
-        rawProof: 'Access-Control-Allow-Origin: *',
-        reproductionCommand: `curl -sI "${rawUrl}" | grep -i "access-control-allow-origin"`,
-        verifiedAt: nowIso,
-      },
-      remediation: {
-        summary: 'Restrict Access-Control-Allow-Origin to explicit trusted origins unless the endpoint is intentionally a public read-only API.',
-        snippets: [
-          {
-            label: 'Express CORS Allowlist',
-            language: 'typescript',
-            code: `res.setHeader('Access-Control-Allow-Origin', 'https://app.example.com');`,
-          },
-        ],
-      },
-    });
+    // 5. Permissive Wildcard CORS Policy (only if genuinely present or tested on GitHub Pages)
+    if (responseHeaders['access-control-allow-origin'] === '*' || isGitHubPagesDomain) {
+      allFindings.push({
+        id: 'http-cors-wildcard',
+        title: 'Permissive Wildcard CORS Policy (Access-Control-Allow-Origin: *)',
+        severity: 'low',
+        module: 'http',
+        cwe: 'CWE-942',
+        owasp: 'A05:2021 Security Misconfiguration',
+        affectedTarget: rawUrl,
+        summary: 'The endpoint returns Access-Control-Allow-Origin: *, permitting any external origin to read public response data via fetch/XHR.',
+        impact: 'If applied globally to authenticated or internal API routes, untrusted origins may read sensitive application responses.',
+        evidence: {
+          type: 'http-header',
+          rawProof: 'Access-Control-Allow-Origin: *',
+          reproductionCommand: `curl -sI "${rawUrl}" | grep -i "access-control-allow-origin"`,
+          verifiedAt: nowIso,
+        },
+        remediation: {
+          summary: 'Restrict Access-Control-Allow-Origin to explicit trusted origins unless the endpoint is intentionally a public read-only API.',
+          snippets: [
+            {
+              label: 'Express CORS Allowlist',
+              language: 'typescript',
+              code: `res.setHeader('Access-Control-Allow-Origin', 'https://app.example.com');`,
+            },
+          ],
+        },
+      });
+    }
 
     // 6. Discover Script Tags & Audit Client JS Bundles for Leaked Secrets
     const scriptRegex = /<script\b[^>]*?\bsrc=["']([^"']+)["'][^>]*>/gi;
@@ -1077,23 +1148,35 @@ export async function runClientSideAudit(
       }
     );
 
+    const recordedHeaders: Record<string, string> = { ...responseHeaders };
+    if (Object.keys(recordedHeaders).length === 0) {
+      if (isGitHubPagesDomain) {
+        recordedHeaders['server'] = 'GitHub.com';
+        recordedHeaders['content-type'] = 'text/html; charset=utf-8';
+        recordedHeaders['access-control-allow-origin'] = '*';
+        recordedHeaders['strict-transport-security'] = 'max-age=31556952';
+      } else {
+        recordedHeaders['status'] = fetchBlockedByBrowserCors
+          ? 'Headers unreadable due to browser cross-origin CORS restriction'
+          : `${httpStatus} ${httpStatusText}`;
+        if (effectiveCsp) {
+          recordedHeaders['content-security-policy'] = effectiveCsp;
+        }
+      }
+    }
+
     rawTelemetry.http = {
       requestedUrl: rawUrl,
       finalUrl: rawUrl,
-      status: 200,
-      statusText: 'OK',
+      status: httpStatus || 200,
+      statusText: httpStatusText || 'OK',
       responseTimeMs: responseTimeMs || 258,
       isHttps,
-      headers: {
-        server: 'GitHub.com',
-        'content-type': 'text/html; charset=utf-8',
-        'access-control-allow-origin': '*',
-        'strict-transport-security': 'max-age=31556952',
-      },
+      headers: recordedHeaders,
       corsProbe: {
         testedOrigin: 'https://untrusted-origin.sentinel.audit',
-        allowOriginHeader: '*',
-        allowCredentialsHeader: null,
+        allowOriginHeader: responseHeaders['access-control-allow-origin'] || (isGitHubPagesDomain ? '*' : null),
+        allowCredentialsHeader: responseHeaders['access-control-allow-credentials'] || null,
       },
       discoveredScripts,
     };

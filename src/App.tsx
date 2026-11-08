@@ -25,14 +25,21 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Server,
   Shield,
   ShieldAlert,
   ShieldCheck,
   Trash2,
   Upload,
+  Wifi,
+  WifiOff,
   Wrench,
   X,
 } from 'lucide-react';
+import {
+  BackendConnectionModal,
+  type BackendConnectionState,
+} from './components/BackendConnectionModal.tsx';
 import { EvidenceDrawer } from './components/EvidenceDrawer.tsx';
 import { HardeningStudio } from './components/HardeningStudio.tsx';
 import MicroSlats from './components/MicroSlats.jsx';
@@ -54,6 +61,7 @@ import type {
 const STORAGE_KEY = 'sentinel_appsec_real_audits_v3';
 const LEGACY_STORAGE_KEY = 'sentinel_audit_history_v1';
 const THEME_STORAGE_KEY = 'sentinel_theme_mode';
+const BACKEND_URL_STORAGE_KEY = 'sentinel_custom_backend_url';
 
 const SEVERITY_LABEL_STYLES: Record<SeverityLevel, string> = {
   critical: 'text-[#EF4444] font-semibold',
@@ -194,8 +202,103 @@ export default function App() {
   const [selectedFinding, setSelectedFinding] =
     useState<VerifiedFinding | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isBackendModalOpen, setIsBackendModalOpen] = useState(false);
   const [headerLogoError, setHeaderLogoError] = useState(false);
   const [heroLogoError, setHeroLogoError] = useState(false);
+
+  const [backendConnection, setBackendConnection] =
+    useState<BackendConnectionState>(() => {
+      let savedUrl = '';
+      try {
+        savedUrl = (localStorage.getItem(BACKEND_URL_STORAGE_KEY) || '').trim();
+      } catch {
+        // ignore
+      }
+      return {
+        mode: savedUrl ? 'remote-node' : 'same-origin-node',
+        customBackendUrl: savedUrl,
+        latencyMs: null,
+        lastCheckedAt: null,
+        isChecking: false,
+        error: null,
+      };
+    });
+
+  const pingBackendConnection = useCallback(
+    async (overrideUrl?: string) => {
+      const targetBase =
+        overrideUrl !== undefined
+          ? overrideUrl.trim().replace(/\/+$/, '')
+          : backendConnection.customBackendUrl.trim().replace(/\/+$/, '');
+
+      setBackendConnection((prev) => ({
+        ...prev,
+        isChecking: true,
+        error: null,
+      }));
+
+      const healthEndpoint = targetBase
+        ? `${targetBase}/api/health`
+        : '/api/health';
+      const startPing = Date.now();
+      try {
+        const res = await fetch(healthEndpoint, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+        });
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = (await res.json()) as { status?: string };
+          if (data.status === 'ok') {
+            const elapsed = Math.max(1, Date.now() - startPing);
+            setBackendConnection({
+              mode: targetBase ? 'remote-node' : 'same-origin-node',
+              customBackendUrl: targetBase,
+              latencyMs: elapsed,
+              lastCheckedAt: new Date().toISOString(),
+              isChecking: false,
+              error: null,
+            });
+            return;
+          }
+        }
+        throw new Error('Endpoint did not return valid Sentinel Node health JSON');
+      } catch {
+        setBackendConnection({
+          mode: 'browser-sandbox',
+          customBackendUrl: targetBase,
+          latencyMs: null,
+          lastCheckedAt: new Date().toISOString(),
+          isChecking: false,
+          error: targetBase
+            ? `Could not reach Node backend at ${targetBase}. Verify the server is running and accessible.`
+            : null,
+        });
+      }
+    },
+    [backendConnection.customBackendUrl]
+  );
+
+  const handleSaveCustomBackendUrl = useCallback(
+    async (newUrl: string) => {
+      const cleaned = newUrl.trim().replace(/\/+$/, '');
+      try {
+        if (cleaned) {
+          localStorage.setItem(BACKEND_URL_STORAGE_KEY, cleaned);
+        } else {
+          localStorage.removeItem(BACKEND_URL_STORAGE_KEY);
+        }
+      } catch {
+        // ignore storage errors
+      }
+      await pingBackendConnection(cleaned);
+    },
+    [pingBackendConnection]
+  );
+
+  useEffect(() => {
+    void pingBackendConnection();
+  }, [pingBackendConnection]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -241,8 +344,16 @@ export default function App() {
           'Target Application Audit';
 
         let report: AuditReport | null = null;
+        const customBase = backendConnection.customBackendUrl
+          .trim()
+          .replace(/\/+$/, '');
+        const auditEndpoint = customBase
+          ? `${customBase}/api/audit/run`
+          : '/api/audit/run';
+
         try {
-          const res = await fetch('/api/audit/run', {
+          const pingStart = Date.now();
+          const res = await fetch(auditEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -253,6 +364,12 @@ export default function App() {
           const contentType = res.headers.get('content-type') || '';
           if (res.ok && contentType.includes('application/json')) {
             report = (await res.json()) as AuditReport;
+            setBackendConnection((prev) => ({
+              ...prev,
+              mode: customBase ? 'remote-node' : 'same-origin-node',
+              latencyMs: prev.latencyMs ?? Math.max(1, Date.now() - pingStart),
+              error: null,
+            }));
           }
         } catch {
           // Backend API unreachable or running on static hosting like GitHub Pages
@@ -260,6 +377,10 @@ export default function App() {
 
         // If backend is not available (e.g., deployed statically on GitHub Pages), run in-browser verification
         if (!report) {
+          setBackendConnection((prev) => ({
+            ...prev,
+            mode: 'browser-sandbox',
+          }));
           report = await runClientSideAudit(targetConfig, inferredName);
         }
         if (baselineForDelta) {
@@ -286,7 +407,7 @@ export default function App() {
         setIsRunning(false);
       }
     },
-    [saveReportToHistory]
+    [backendConnection.customBackendUrl, saveReportToHistory]
   );
 
   const handleResetWorkspace = () => {
@@ -579,8 +700,43 @@ export default function App() {
             </div>
           </div>
 
-          {(hasTargetInput || activeReport) && (
-            <div className="flex items-center gap-3 self-start lg:self-end shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-end shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsBackendModalOpen(true)}
+              className={`glass-panel flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                backendConnection.mode === 'browser-sandbox'
+                  ? 'border-amber-500/40 text-amber-300 hover:border-amber-400'
+                  : 'border-emerald-500/35 text-emerald-300 hover:border-emerald-400'
+              }`}
+              title="Configure live Node.js backend connection or view free fullstack deployment guide"
+            >
+              {backendConnection.mode === 'browser-sandbox' ? (
+                <WifiOff className="h-3.5 w-3.5 text-amber-400" />
+              ) : (
+                <Wifi className="h-3.5 w-3.5 text-emerald-400" />
+              )}
+              <span>
+                {backendConnection.mode === 'same-origin-node'
+                  ? 'Node Engine Active'
+                  : backendConnection.mode === 'remote-node'
+                  ? 'Remote Node Connected'
+                  : 'Browser Sandbox · Connect Backend'}
+              </span>
+              {backendConnection.latencyMs !== null &&
+                backendConnection.mode !== 'browser-sandbox' && (
+                  <>
+                    <span className="text-white/30" aria-hidden="true">
+                      ·
+                    </span>
+                    <span className="font-mono tabular-nums text-[#E2E8F0]">
+                      {backendConnection.latencyMs}ms
+                    </span>
+                  </>
+                )}
+            </button>
+
+            {(hasTargetInput || activeReport) && (
               <button
                 type="button"
                 onClick={handleResetWorkspace}
@@ -589,8 +745,8 @@ export default function App() {
                 <RotateCcw className="h-3.5 w-3.5 text-[#38BDF8]" />
                 <span>Reset Workspace</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </section>
 
         {/* ===================================================================
@@ -2214,6 +2370,14 @@ export default function App() {
               Audit Console
             </a>
             <button
+              type="button"
+              onClick={() => setIsBackendModalOpen(true)}
+              className="hover:text-white transition-colors flex items-center gap-1"
+            >
+              <Server className="h-3 w-3 text-[#38BDF8]" />
+              <span>Engine & Free Cloud Deploy</span>
+            </button>
+            <button
               onClick={() => setIsExportModalOpen(true)}
               disabled={!activeReport}
               className="hover:text-white disabled:opacity-40 transition-colors"
@@ -2256,6 +2420,15 @@ export default function App() {
         report={activeReport}
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
+      />
+
+      {/* Live Backend Connection & Free Fullstack Cloud Deployment Manager */}
+      <BackendConnectionModal
+        isOpen={isBackendModalOpen}
+        onClose={() => setIsBackendModalOpen(false)}
+        connectionState={backendConnection}
+        onSaveCustomUrl={handleSaveCustomBackendUrl}
+        onPingConnection={pingBackendConnection}
       />
     </div>
   );
