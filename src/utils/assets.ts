@@ -6,4 +6,4 @@
 const BASE = import.meta.env.BASE_URL || './';
 const normalizedBase = BASE.endsWith('/') ? BASE : `${BASE}/`;
 
-export const SENTINEL_LOGO_SRC = `${normalizedBase}assets/aistudio/Code_Generated_Image_dcad87d9.png`;
+export const SENTINEL_LOGO_SRC = `${normalizedBase}logo.png`;
