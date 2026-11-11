@@ -79,36 +79,6 @@ export async function exportAuditReportToPdf(report: AuditReport): Promise<void>
   const CARD_PAD = 14;
   const INNER_TEXT_WIDTH = CONTENT_WIDTH - CARD_PAD * 2; // 471.28pt
 
-  const stampSentinelWatermark = () => {
-    try {
-      const cx = pageWidth / 2;
-      const cy = pageHeight / 2 + 15;
-      // High-precision vector geometric security shield watermark
-      doc.setDrawColor(234, 240, 248);
-      doc.setLineWidth(1.5);
-      const w = 210;
-      const h = 260;
-      // Outer subtle shield boundary
-      doc.lines(
-        [
-          [w / 2, -28],
-          [w / 2, 28],
-          [0, h * 0.46],
-          [-w / 2, h * 0.54],
-          [-w / 2, -h * 0.54],
-          [0, -h * 0.46],
-        ],
-        cx - w / 2,
-        cy - h / 2,
-        [1, 1],
-        'D',
-        true
-      );
-    } catch {
-      // ignore
-    }
-  };
-
   let y = MARGIN_TOP;
 
   const ensureSpace = (neededHeight: number) => {
@@ -511,7 +481,6 @@ export async function exportAuditReportToPdf(report: AuditReport): Promise<void>
   const totalPages = doc.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
-    stampSentinelWatermark();
     doc.setDrawColor(203, 213, 225);
     doc.setLineWidth(0.5);
     doc.line(

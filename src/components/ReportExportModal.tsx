@@ -246,19 +246,8 @@ export const ReportExportModal: React.FC<ReportExportModalProps> = ({
           </div>
         </div>
 
-        {/* Certificate / Report Preview Body with Centered Geometric Sentinel Logo Watermark */}
+        {/* Certificate / Report Preview Body */}
         <div className="relative flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none select-none fixed inset-0 z-0 flex items-center justify-center"
-          >
-            <img
-              src={SENTINEL_LOGO_SRC}
-              alt=""
-              className="h-80 w-80 object-contain opacity-[0.045] filter contrast-150"
-            />
-          </div>
-
           {/* Official Sentinel Header Banner */}
           <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-white/[0.09] pb-6">
             <div className="flex items-center gap-4">
