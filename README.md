@@ -127,25 +127,6 @@ If you are using the hosted web version at [**tmvoid.github.io/Sentinel-AppSec**
 
 ---
 
-## ☁️ Free Cloud Deployment Options ($0/month)
-
-If you wish to deploy a public instance of Sentinel AppSec for team or global access without paying for servers:
-
-### Option 1: Render Free Web Service (All-in-One)
-The repository includes a ready-to-deploy [`render.yaml`](render.yaml) blueprint:
-1. Sign in at [dashboard.render.com](https://dashboard.render.com/) (using email or GitHub).
-2. Click **New +** → **Blueprint** and point to your repository.
-3. Render automatically provisions a 100% free Node.js Web Service running `npx tsx server.ts`.
-
-### Option 2: Docker Container Deployment
-A multi-stage [`Dockerfile`](Dockerfile) is included for hosting on Koyeb, Fly.io, or your own VPS:
-```bash
-docker build -t sentinel-appsec .
-docker run -p 3000:3000 sentinel-appsec
-```
-
----
-
 ## 📊 Project Structure
 
 ```
