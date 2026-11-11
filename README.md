@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://tmvoid.github.io/Sentinel-AppSec/"><img src="https://img.shields.io/badge/Live_Console-GitHub_Pages-0284c7?style=for-the-badge&logo=githubpages&logoColor=white" alt="Live Demo" /></a>
+  <a href="https://tmvoid.github.io/Sentinel-AppSec/"><img src="https://img.shields.io/badge/Static_UI_Showcase-GitHub_Pages-0284c7?style=for-the-badge&logo=githubpages&logoColor=white" alt="Static UI Showcase" /></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-20+-22c55e?style=for-the-badge&logo=node.js&logoColor=white" alt="Node Version" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-7.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" /></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=black" alt="React 19" /></a>
@@ -33,14 +33,21 @@
 
 Unlike traditional compliance scanners that generate noisy alerts based on string matching or speculative checks, Sentinel operates on a strict **empirical verification model**: every vulnerability reported includes a reproducible command (`curl`), raw response headers, cryptographic cracking evidence, extracted script strings, or exact source code lines.
 
+> [!IMPORTANT]
+> ### 🔒 Local-First Privacy Architecture & Static Preview Notice
+> * **Why GitHub Pages is a Static UI Showcase (Demo Mode)**: The deployed [**GitHub Pages site (`tmvoid.github.io/Sentinel-AppSec`)**](https://tmvoid.github.io/Sentinel-AppSec/) is a purely static frontend build intended as a **visual display showcase** to demonstrate how the platform looks and operates. Because static hosting runs inside a web browser sandbox without a live Node.js socket server, it **does not produce authentic live network audit results** on external domains.
+> * **Why Authentic Audits Run on Your Own Device (Privacy by Design)**: Security auditing inherently involves sensitive infrastructure URLs, proprietary source code, internal endpoints, and active JWT session tokens. Because **we value strict data privacy**, Sentinel AppSec is architected to be installed and executed locally on your own machine (`npm run engine`).
+> * **100% On-Device Reports**: When you run Sentinel locally, every raw-socket probe is executed directly from your device's operating system network stack, and **every audit report and PDF you generate stays exclusively on your device**—never transmitted to, logged by, or stored on any external server.
+
 ### 🌟 Why Sentinel AppSec?
 
+* **Strict On-Device Privacy**: Zero cloud logging. Every scan, source file, token, and exported PDF report stays strictly on your personal machine.
 * **Deterministic Verification**: No speculative heuristics or unverified risk scoring.
 * **100% Private Local Audit Daemon**: Run audits directly through your workstation's raw network sockets with zero external cloud dependencies.
 * **Cross-Platform by Design**: Fully compatible across **Linux (Fedora, Ubuntu, Arch, Debian)**, **macOS**, and **Windows (PowerShell, CMD, WSL)**.
-* **Dual-Architecture Runtime**: Operates seamlessly as a self-contained fullstack server, or as an in-browser static console on GitHub Pages connected to a local daemon via W3C Private Network Access.
+* **Dual-Architecture Runtime**: Operates seamlessly as a self-contained local fullstack server (`http://localhost:3000`), or pairs the static UI showcase with your local daemon via W3C Private Network Access.
 * **Automated Remediation Studio**: Generates drop-in server and framework hardening snippets (Express, Nginx, Next.js, Vercel) and provides Before-vs-After delta comparison.
-* **Executive PDF Generation**: Exports client-ready, tamper-evident security audit reports with SHA-256 integrity proofs.
+* **Executive PDF Generation**: Exports client-ready, tamper-evident security audit reports locally in your browser.
 
 ---
 

@@ -172,10 +172,10 @@ export const BackendConnectionModal: React.FC<BackendConnectionModalProps> = ({
                     <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
                       <span className={isLiveNode ? 'text-emerald-300' : 'text-amber-300'}>
                         {connectionState.mode === 'same-origin-node'
-                          ? 'Connected: Local / Same-Origin Node.js Engine'
+                          ? 'Connected: Local On-Device Node.js Engine'
                           : connectionState.mode === 'remote-node'
-                          ? 'Connected: Remote Cloud Node.js Backend'
-                          : 'Active Mode: Browser Client Sandbox (Static Host)'}
+                          ? 'Connected: Remote Node.js Engine'
+                          : 'Active Mode: Static Preview & UI Showcase (Demo Mode)'}
                       </span>
                       {connectionState.latencyMs !== null && (
                         <>
@@ -188,8 +188,8 @@ export const BackendConnectionModal: React.FC<BackendConnectionModalProps> = ({
                     </div>
                     <p className="text-xs text-[#CBD5E1] leading-relaxed">
                       {isLiveNode
-                        ? '100% genuine OS-level TCP/HTTP socket auditing active. Can inspect any external target (e.g. youtube.com, enterprise APIs) without browser CORS or Mixed-Content blocks.'
-                        : 'Running statically in your browser (e.g. GitHub Pages). Web browsers block cross-origin header inspection on third-party sites. Connect a free Node backend below for unrestricted scans.'}
+                        ? '100% authentic OS-level TCP/HTTP socket auditing active on your machine. Every target you scan and every report you generate stays strictly on your device.'
+                        : 'Hosted GitHub Pages deployments are static UI showcases and do not produce authentic live network audit results due to browser sandbox isolation. Because we value your privacy, install and run Sentinel on your own device below so every report stays 100% on your machine.'}
                     </p>
                   </div>
                 </div>
@@ -549,10 +549,10 @@ export const BackendConnectionModal: React.FC<BackendConnectionModalProps> = ({
             Engine Mode:{' '}
             <span className="font-semibold text-white">
               {connectionState.mode === 'same-origin-node'
-                ? 'Fullstack Node.js (Direct Sockets)'
+                ? 'Local On-Device Node.js (Direct Sockets)'
                 : connectionState.mode === 'remote-node'
-                ? `Remote Node Backend (${connectionState.customBackendUrl})`
-                : 'Browser Sandbox Fallback'}
+                ? `Remote Node Engine (${connectionState.customBackendUrl})`
+                : 'Static Preview & UI Showcase (Demo Mode)'}
             </span>
           </div>
           <button

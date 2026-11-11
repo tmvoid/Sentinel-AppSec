@@ -718,10 +718,10 @@ export default function App() {
               )}
               <span>
                 {backendConnection.mode === 'same-origin-node'
-                  ? 'Node Engine Active'
+                  ? 'Local Node Engine Active'
                   : backendConnection.mode === 'remote-node'
                   ? 'Remote Node Connected'
-                  : 'Browser Sandbox · Connect Backend'}
+                  : 'Static Preview & UI Showcase (Demo Mode)'}
               </span>
               {backendConnection.latencyMs !== null &&
                 backendConnection.mode !== 'browser-sandbox' && (
@@ -748,6 +748,42 @@ export default function App() {
             )}
           </div>
         </section>
+
+        {/* Subtle Static Preview & Local-First Privacy Banner (Shown on GitHub Pages / Static Mode) */}
+        {backendConnection.mode === 'browser-sandbox' && (
+          <div className="glass-panel rounded-xl border border-[#38BDF8]/30 bg-[#0284C7]/[0.07] px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <Shield className="h-4 w-4 text-[#38BDF8] shrink-0 mt-0.5" />
+              <div className="space-y-1 text-xs">
+                <div className="flex flex-wrap items-center gap-2 font-semibold text-white">
+                  <span className="text-[#38BDF8]">
+                    Static Preview & UI Showcase (Demo Mode)
+                  </span>
+                  <span className="text-white/30" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>Local-First Privacy Guarantee</span>
+                </div>
+                <p className="text-[#CBD5E1] leading-relaxed">
+                  This hosted GitHub Pages site is a static display showcase and
+                  does not execute live raw-socket network scans. Because we
+                  value strict data privacy, Sentinel AppSec is designed to be
+                  installed and run on your own device—ensuring every target you
+                  audit and every report you generate stays exclusively on your
+                  machine.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsBackendModalOpen(true)}
+              className="glass-subpanel flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold text-[#38BDF8] hover:border-[#38BDF8]/50 hover:text-white transition-all whitespace-nowrap shrink-0 self-start sm:self-center"
+            >
+              <Server className="h-3.5 w-3.5" />
+              <span>Run Locally on Your Device</span>
+            </button>
+          </div>
+        )}
 
         {/* ===================================================================
             TRANSLUCENT GLASSMORPHIC WORKSPACE (TARGET CONTROLLER + TELEMETRY)
