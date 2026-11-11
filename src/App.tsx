@@ -2272,7 +2272,7 @@ export default function App() {
             <p className="text-xs text-[#CBD5E1] leading-relaxed">
               Every module relies on live protocol inspection, cryptographic
               verification, and upstream CVE advisory databases rather than
-              speculative AI guessing.
+              speculative or unverified heuristics.
             </p>
           </div>
 

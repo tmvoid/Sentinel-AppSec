@@ -35,7 +35,7 @@ Unlike traditional compliance scanners that generate noisy alerts based on strin
 
 ### 🌟 Why Sentinel AppSec?
 
-* **Deterministic Verification**: No AI hallucinations or speculative risk scoring.
+* **Deterministic Verification**: No speculative heuristics or unverified risk scoring.
 * **100% Private Local Audit Daemon**: Run audits directly through your workstation's raw network sockets with zero external cloud dependencies.
 * **Dual-Architecture Runtime**: Operates seamlessly as a self-contained fullstack server, or as an in-browser static console on GitHub Pages connected to a local daemon via W3C Private Network Access.
 * **Automated Remediation Studio**: Generates drop-in server and framework hardening snippets (Express, Nginx, Next.js, Vercel) and provides Before-vs-After delta comparison.
@@ -153,7 +153,6 @@ docker run -p 3000:3000 sentinel-appsec
 │   └── workflows/
 │       └── deploy.yml            # Automated GitHub Actions CI/CD to GitHub Pages
 ├── public/
-│   ├── assets/                   # Vector crests and branding assets
 │   └── logo.png                  # Canonical Sentinel shield insignia
 ├── src/
 │   ├── components/
