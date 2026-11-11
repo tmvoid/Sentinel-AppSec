@@ -269,7 +269,7 @@ export const BackendConnectionModal: React.FC<BackendConnectionModalProps> = ({
                         Automatic / Same-Origin Server
                       </div>
                       <div className="text-[11px] text-[#94A3B8] mt-0.5 font-mono">
-                        /api/audit/run (Default for Render & AI Studio)
+                        /api/audit/run (Default for Render & Local Engine)
                       </div>
                     </button>
 
@@ -408,7 +408,7 @@ export const BackendConnectionModal: React.FC<BackendConnectionModalProps> = ({
                   Your repository now includes both <code className="font-mono text-[#38BDF8]">render.yaml</code> and{' '}
                   <code className="font-mono text-[#38BDF8]">Dockerfile</code>. Deploying on Render
                   runs the exact same <code className="font-mono text-[#38BDF8]">server.ts</code>{' '}
-                  Node.js engine as AI Studio—hosting both your React UI and live backend on a
+                  Node.js engine—hosting both your React UI and live backend on a
                   single <code className="font-mono">https://*.onrender.com</code> URL with
                   automatic deploys on every <code className="font-mono">git push</code>.
                 </p>
