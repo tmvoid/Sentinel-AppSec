@@ -37,6 +37,7 @@ Unlike traditional compliance scanners that generate noisy alerts based on strin
 
 * **Deterministic Verification**: No speculative heuristics or unverified risk scoring.
 * **100% Private Local Audit Daemon**: Run audits directly through your workstation's raw network sockets with zero external cloud dependencies.
+* **Cross-Platform by Design**: Fully compatible across **Linux (Fedora, Ubuntu, Arch, Debian)**, **macOS**, and **Windows (PowerShell, CMD, WSL)**.
 * **Dual-Architecture Runtime**: Operates seamlessly as a self-contained fullstack server, or as an in-browser static console on GitHub Pages connected to a local daemon via W3C Private Network Access.
 * **Automated Remediation Studio**: Generates drop-in server and framework hardening snippets (Express, Nginx, Next.js, Vercel) and provides Before-vs-After delta comparison.
 * **Executive PDF Generation**: Exports client-ready, tamper-evident security audit reports with SHA-256 integrity proofs.
@@ -86,9 +87,9 @@ Sentinel runs your target through seven purpose-built auditing engines:
 
 ## 🚀 Getting Started
 
-You can run Sentinel AppSec in two ways:
+Sentinel AppSec is built to work out of the box on **Windows**, **Linux (Fedora, Ubuntu, Debian, Arch)**, and **macOS**.
 
-### Method A: 100% Private Local Engine (Recommended for Security Testing)
+### Method A: 100% Private Local Engine (Recommended)
 
 This method runs both the web UI and the Node.js audit daemon on your personal computer. It requires **zero external cloud accounts**, keeps all code and tokens strictly on your machine, and provides unrestricted raw socket access to audit any local or external target:
 
@@ -97,8 +98,10 @@ This method runs both the web UI and the Node.js audit daemon on your personal c
 git clone https://github.com/tmvoid/Sentinel-AppSec.git
 cd Sentinel-AppSec
 
-# 2. Install dependencies
+# 2. Install dependencies (Works across Windows, Linux, Fedora & macOS)
 npm install
+# Or use the clean cross-platform setup script:
+npm run setup
 
 # 3. Start the Sentinel engine
 npm run engine
@@ -127,6 +130,20 @@ If you are using the hosted web version at [**tmvoid.github.io/Sentinel-AppSec**
 
 ---
 
+## 🛠️ Available Scripts
+
+| Command | Action | Platform Support |
+| :--- | :--- | :--- |
+| `npm run engine` | Boots the fullstack Sentinel server & audit daemon on `http://localhost:3000` | Windows, Linux, macOS |
+| `npm run dev` | Runs the fullstack development server with Vite HMR | Windows, Linux, macOS |
+| `npm run setup` | Clean, peer-dependency safe installation (`npm install --legacy-peer-deps`) | Windows, Linux, macOS |
+| `npm run build` | Compiles the production frontend bundle into `dist/` | Windows, Linux, macOS |
+| `npm run start` | Starts the production server hosting `dist/` and `/api/*` | Windows, Linux, macOS |
+| `npm run lint` | Runs TypeScript type verification (`tsc --noEmit`) | Windows, Linux, macOS |
+| `npm run clean` | Cross-platform cleanup of `dist/` and `server.js` using Node.js | Windows, Linux, macOS |
+
+---
+
 ## 📊 Project Structure
 
 ```
@@ -147,13 +164,18 @@ If you are using the hosted web version at [**tmvoid.github.io/Sentinel-AppSec**
 │   │   └── audit.ts              # TypeScript domain schemas and interfaces
 │   ├── utils/
 │   │   ├── assets.ts             # Base-aware asset resolution
-│   │   └── clientAuditEngine.ts  # In-browser deterministic fallback scanner
+│   │   ├── clientAuditEngine.ts  # In-browser deterministic fallback scanner
+│   │   └── pdfExport.ts          # Clean vector PDF audit report generator
 │   ├── App.tsx                   # Main console orchestration layout
 │   └── main.tsx                  # Application bootstrap
+├── .env.example                  # Environment variable reference template
+├── .npmrc                        # Cross-platform peer dependency resolution rule
 ├── Dockerfile                    # Containerization recipe for cloud hosts
+├── LICENSE                       # Apache 2.0 open-source license
 ├── package.json                  # Dependencies, scripts, and engine entrypoints
 ├── render.yaml                   # Infrastructure-as-Code blueprint for Render
 ├── server.ts                     # Fullstack Node.js server with raw socket audit engines
+├── tsconfig.json                 # TypeScript compiler configuration
 └── vite.config.ts                # Vite build and Tailwind CSS v4 setup
 ```
 
